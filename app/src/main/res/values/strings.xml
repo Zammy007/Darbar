@@ -1,0 +1,24 @@
+<resources>
+    <string name="app_name">দরবার</string>
+    <string name="app_tagline">Your Knowledge, Your Future</string>
+    <string name="app_footer">দরবার © 2026</string>
+    <string name="sign_in_with_google">Sign in with Google</string>
+    <string name="sign_out">Sign out</string>
+    <string name="subjects_section_title">Study Subjects</string>
+    <string name="daily_quiz_title">Daily Quiz</string>
+    <string name="daily_quiz_subtitle">10 AI-crafted General Knowledge questions refreshed every day</string>
+    <string name="tab_view">View</string>
+    <string name="tab_upload">Upload</string>
+    <string name="lock_uploads">Lock</string>
+    <string name="password_modal_title">Upload Access</string>
+    <string name="password_modal_subtitle">Enter the upload password to unlock uploading for this session.</string>
+    <string name="password_incorrect">Incorrect password</string>
+    <string name="unlock_button">Unlock</string>
+    <string name="cancel_button">Cancel</string>
+    <string name="search_documents_placeholder">Search %1$s notes by title or description…</string>
+    <string name="download_button">Download</string>
+    <string name="preview_button">Preview</string>
+    <string name="upload_submit_button">Upload Document</string>
+    <string name="toggle_theme_cd">Toggle light and dark theme</string>
+    <string name="back_cd">Navigate back</string>
+</resources>

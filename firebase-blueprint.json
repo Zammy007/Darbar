@@ -1,0 +1,234 @@
+{
+  "entities": {
+    "StudyDocument": {
+      "title": "StudyDocument",
+      "description": "Metadata for a study material document uploaded under one of the six Darbar subjects. Clients must submit FieldValue.serverTimestamp() for createdAt and updatedAt.",
+      "type": "object",
+      "properties": {
+        "subjectId": {
+          "type": "string",
+          "description": "Subject identifier the document belongs to.",
+          "enum": ["bengali", "english", "physics", "mathematics", "chemistry", "biology"]
+        },
+        "title": {
+          "type": "string",
+          "description": "Document title (1-160 characters)."
+        },
+        "description": {
+          "type": "string",
+          "description": "Optional short description of the study material (0-500 characters)."
+        },
+        "fileName": {
+          "type": "string",
+          "description": "Original file name with extension."
+        },
+        "fileExtension": {
+          "type": "string",
+          "description": "Lowercase allowed file extension.",
+          "enum": ["pdf", "jpg", "jpeg", "png", "webp", "doc", "docx", "ppt", "pptx", "xls", "xlsx", "txt"]
+        },
+        "mimeType": {
+          "type": "string",
+          "description": "MIME type of the uploaded file."
+        },
+        "fileSizeBytes": {
+          "type": "integer",
+          "description": "Raw file size in bytes (1 to 8388608)."
+        },
+        "chunkCount": {
+          "type": "integer",
+          "description": "Number of Base64 chunks stored in the chunks subcollection (1 to 20)."
+        },
+        "uploadComplete": {
+          "type": "boolean",
+          "description": "True once all file chunks have been committed."
+        },
+        "visibility": {
+          "type": "string",
+          "description": "Shared visibility level for all students.",
+          "enum": ["public"]
+        },
+        "uploaderId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the uploader."
+        },
+        "uploaderName": {
+          "type": "string",
+          "description": "Display name of the uploader (no PII)."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of document upload creation (FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of last update (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": [
+        "subjectId",
+        "title",
+        "fileName",
+        "fileExtension",
+        "mimeType",
+        "fileSizeBytes",
+        "chunkCount",
+        "uploadComplete",
+        "visibility",
+        "uploaderId",
+        "uploaderName",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "FileChunk": {
+      "title": "FileChunk",
+      "description": "A Base64-encoded binary slice of an uploaded study document stored in Firestore so any student on any device can preview and download the file.",
+      "type": "object",
+      "properties": {
+        "documentId": {
+          "type": "string",
+          "description": "Parent StudyDocument ID."
+        },
+        "uploaderId": {
+          "type": "string",
+          "description": "Denormalized Firebase Auth UID of the parent document uploader."
+        },
+        "visibility": {
+          "type": "string",
+          "description": "Denormalized visibility matching parent document.",
+          "enum": ["public"]
+        },
+        "chunkIndex": {
+          "type": "integer",
+          "description": "Zero-based sequential chunk index (0-19)."
+        },
+        "dataBase64": {
+          "type": "string",
+          "description": "Base64-encoded bytes for this chunk."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of chunk creation (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": [
+        "documentId",
+        "uploaderId",
+        "visibility",
+        "chunkIndex",
+        "dataBase64",
+        "createdAt"
+      ]
+    },
+    "DailyQuiz": {
+      "title": "DailyQuiz",
+      "description": "AI-generated 10-question General Knowledge daily quiz shared across all students for a specific YYYY-MM-DD date.",
+      "type": "object",
+      "properties": {
+        "dateKey": {
+          "type": "string",
+          "description": "ISO date key YYYY-MM-DD matching the document ID."
+        },
+        "createdBy": {
+          "type": "string",
+          "description": "Firebase Auth UID of the user whose session generated today's quiz."
+        },
+        "visibility": {
+          "type": "string",
+          "description": "Shared visibility for all students.",
+          "enum": ["public"]
+        },
+        "source": {
+          "type": "string",
+          "description": "Generation source identifier.",
+          "enum": ["gemini"]
+        },
+        "questions": {
+          "type": "array",
+          "description": "Exactly 10 multiple-choice General Knowledge questions with 4 options, correctIndex, explanation, and topic."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of daily quiz generation (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": [
+        "dateKey",
+        "createdBy",
+        "visibility",
+        "source",
+        "questions",
+        "createdAt"
+      ]
+    },
+    "QuizAttempt": {
+      "title": "QuizAttempt",
+      "description": "Personal record of a student's daily quiz attempt, score, and chosen answers.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Owner Firebase Auth UID."
+        },
+        "dateKey": {
+          "type": "string",
+          "description": "ISO date key YYYY-MM-DD of the attempted quiz."
+        },
+        "score": {
+          "type": "integer",
+          "description": "Number of correct answers (0-10)."
+        },
+        "totalQuestions": {
+          "type": "integer",
+          "description": "Total number of questions in the attempt (1-10)."
+        },
+        "selectedAnswers": {
+          "type": "array",
+          "description": "List of selected option indices per question."
+        },
+        "completedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when first completed (FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of latest attempt update (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": [
+        "userId",
+        "dateKey",
+        "score",
+        "totalQuestions",
+        "selectedAnswers",
+        "completedAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/documents/{documentId}": {
+      "schema": { "$ref": "#/entities/StudyDocument" },
+      "description": "Shared study materials categorized by subjectId for all authenticated Darbar students."
+    },
+    "/documents/{documentId}/chunks/{chunkId}": {
+      "schema": { "$ref": "#/entities/FileChunk" },
+      "description": "Chunked Base64 binary slices for each study document enabling permanent cross-device preview and download."
+    },
+    "/daily_quizzes/{dateKey}": {
+      "schema": { "$ref": "#/entities/DailyQuiz" },
+      "description": "Once-per-day Gemini-generated General Knowledge quiz keyed by YYYY-MM-DD."
+    },
+    "/users/{userId}/quiz_attempts/{dateKey}": {
+      "schema": { "$ref": "#/entities/QuizAttempt" },
+      "description": "Private per-student daily quiz score and answer history."
+    }
+  }
+}

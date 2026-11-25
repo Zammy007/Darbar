@@ -1,0 +1,219 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Pillar 0: Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- GLOBAL HARDENED PRIMITIVES ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidDateKey(key) {
+      return key is string && key.size() == 10 && key.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$');
+    }
+
+    function isAllowedSubject(subjectId) {
+      return subjectId in ['bengali', 'english', 'physics', 'mathematics', 'chemistry', 'biology'];
+    }
+
+    function isAllowedExtension(ext) {
+      return ext in ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx', 'txt'];
+    }
+
+    // --- VALIDATION BLUEPRINTS ---
+    function isValidStudyDocument(data) {
+      return data.subjectId is string && isAllowedSubject(data.subjectId) &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 160 &&
+             (!('description' in data) || (data.description is string && data.description.size() <= 500)) &&
+             data.fileName is string && data.fileName.size() >= 1 && data.fileName.size() <= 200 &&
+             data.fileExtension is string && isAllowedExtension(data.fileExtension) &&
+             data.mimeType is string && data.mimeType.size() >= 1 && data.mimeType.size() <= 120 &&
+             data.fileSizeBytes is int && data.fileSizeBytes >= 1 && data.fileSizeBytes <= 8388608 &&
+             data.chunkCount is int && data.chunkCount >= 1 && data.chunkCount <= 20 &&
+             data.uploadComplete is bool &&
+             data.visibility is string && data.visibility == 'public' &&
+             data.uploaderId is string && data.uploaderId.size() >= 1 && data.uploaderId.size() <= 128 &&
+             data.uploaderName is string && data.uploaderName.size() >= 1 && data.uploaderName.size() <= 100 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidFileChunk(data) {
+      return data.documentId is string && isValidId(data.documentId) &&
+             data.uploaderId is string && data.uploaderId.size() >= 1 && data.uploaderId.size() <= 128 &&
+             data.visibility is string && data.visibility == 'public' &&
+             data.chunkIndex is int && data.chunkIndex >= 0 && data.chunkIndex < 20 &&
+             data.dataBase64 is string && data.dataBase64.size() >= 1 && data.dataBase64.size() <= 750000 &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    function isValidDailyQuiz(data) {
+      return isValidDateKey(data.dateKey) &&
+             data.createdBy is string && data.createdBy.size() >= 1 && data.createdBy.size() <= 128 &&
+             data.visibility is string && data.visibility == 'public' &&
+             data.source is string && data.source == 'gemini' &&
+             data.questions is list && data.questions.size() == 10 && data.questions[0] is map &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    function isValidQuizAttempt(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             isValidDateKey(data.dateKey) &&
+             data.score is int && data.score >= 0 && data.score <= 10 &&
+             data.totalQuestions is int && data.totalQuestions >= 1 && data.totalQuestions <= 10 &&
+             data.selectedAnswers is list && data.selectedAnswers.size() <= 10 &&
+             (data.selectedAnswers.size() == 0 || data.selectedAnswers[0] is int) &&
+             data.completedAt is timestamp && data.completedAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    // --- COLLECTION: SHARED STUDY DOCUMENTS ---
+    match /documents/{documentId} {
+      allow get: if isSignedIn() &&
+                    isValidId(documentId) &&
+                    (existing().visibility == 'public' || existing().uploaderId == request.auth.uid);
+
+      allow list: if isSignedIn() &&
+                     resource.data.visibility == 'public' &&
+                     isAllowedSubject(resource.data.subjectId);
+
+      allow create: if isSignedIn() &&
+                       isValidId(documentId) &&
+                       incoming().uploaderId == request.auth.uid &&
+                       incoming().keys().hasAll([
+                         'subjectId', 'title', 'fileName', 'fileExtension', 'mimeType',
+                         'fileSizeBytes', 'chunkCount', 'uploadComplete', 'visibility',
+                         'uploaderId', 'uploaderName', 'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'subjectId', 'title', 'description', 'fileName', 'fileExtension', 'mimeType',
+                         'fileSizeBytes', 'chunkCount', 'uploadComplete', 'visibility',
+                         'uploaderId', 'uploaderName', 'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidStudyDocument(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(documentId) &&
+                       isValidStudyDocument(incoming()) &&
+                       existing().uploaderId == request.auth.uid &&
+                       incoming().uploaderId == existing().uploaderId &&
+                       incoming().subjectId == existing().subjectId &&
+                       incoming().visibility == existing().visibility &&
+                       incoming().createdAt == existing().createdAt && (
+                         // Action: Finalize upload after all chunks are written
+                         (existing().uploadComplete == false &&
+                          incoming().uploadComplete == true &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['uploadComplete', 'updatedAt'])) ||
+                         // Action: Edit document title or description
+                         (incoming().diff(existing()).affectedKeys().hasOnly(['title', 'description', 'updatedAt']))
+                       );
+
+      allow delete: if isSignedIn() &&
+                       isValidId(documentId) &&
+                       existing().uploaderId == request.auth.uid;
+
+      // --- SUBCOLLECTION: CHUNKED FILE BYTES ---
+      match /chunks/{chunkId} {
+        allow get: if isSignedIn() &&
+                      isValidId(documentId) &&
+                      isValidId(chunkId) &&
+                      (existing().visibility == 'public' || existing().uploaderId == request.auth.uid);
+
+        allow list: if isSignedIn() &&
+                       isValidId(documentId) &&
+                       resource.data.visibility == 'public' &&
+                       resource.data.documentId == documentId;
+
+        allow create: if isSignedIn() &&
+                         isValidId(documentId) &&
+                         isValidId(chunkId) &&
+                         incoming().uploaderId == request.auth.uid &&
+                         incoming().documentId == documentId &&
+                         incoming().keys().hasAll([
+                           'documentId', 'uploaderId', 'visibility', 'chunkIndex', 'dataBase64', 'createdAt'
+                         ]) &&
+                         incoming().keys().hasOnly([
+                           'documentId', 'uploaderId', 'visibility', 'chunkIndex', 'dataBase64', 'createdAt'
+                         ]) &&
+                         isValidFileChunk(incoming()) &&
+                         exists(/databases/$(database)/documents/documents/$(documentId)) &&
+                         get(/databases/$(database)/documents/documents/$(documentId)).data.uploaderId == request.auth.uid;
+
+        allow update: if false;
+
+        allow delete: if isSignedIn() &&
+                         isValidId(documentId) &&
+                         isValidId(chunkId) &&
+                         existing().uploaderId == request.auth.uid;
+      }
+    }
+
+    // --- COLLECTION: SHARED DAILY QUIZZES (ONCE PER DAY) ---
+    match /daily_quizzes/{dateKey} {
+      allow get: if isSignedIn() && isValidDateKey(dateKey);
+      allow list: if false;
+
+      allow create: if isSignedIn() &&
+                       isValidDateKey(dateKey) &&
+                       incoming().dateKey == dateKey &&
+                       incoming().createdBy == request.auth.uid &&
+                       incoming().keys().hasAll([
+                         'dateKey', 'createdBy', 'visibility', 'source', 'questions', 'createdAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'dateKey', 'createdBy', 'visibility', 'source', 'questions', 'createdAt'
+                       ]) &&
+                       isValidDailyQuiz(incoming());
+
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    // --- COLLECTION: PRIVATE USER QUIZ ATTEMPTS ---
+    match /users/{userId}/quiz_attempts/{dateKey} {
+      allow get: if isSignedIn() && request.auth.uid == userId && isValidDateKey(dateKey);
+      allow list: if isSignedIn() && request.auth.uid == userId;
+
+      allow create: if isSignedIn() &&
+                       request.auth.uid == userId &&
+                       isValidDateKey(dateKey) &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().dateKey == dateKey &&
+                       incoming().keys().hasAll([
+                         'userId', 'dateKey', 'score', 'totalQuestions', 'selectedAnswers', 'completedAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'dateKey', 'score', 'totalQuestions', 'selectedAnswers', 'completedAt', 'updatedAt'
+                       ]) &&
+                       isValidQuizAttempt(incoming());
+
+      allow update: if isSignedIn() &&
+                       request.auth.uid == userId &&
+                       isValidDateKey(dateKey) &&
+                       isValidQuizAttempt(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().dateKey == existing().dateKey &&
+                       incoming().completedAt == existing().completedAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'score', 'totalQuestions', 'selectedAnswers', 'updatedAt'
+                       ]);
+
+      allow delete: if isSignedIn() && request.auth.uid == userId && isValidDateKey(dateKey);
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "দরবার",
+  "description": "Student study-material sharing platform with 6 subject hubs, password-protected uploads, and an AI-powered Daily General Knowledge Quiz.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
