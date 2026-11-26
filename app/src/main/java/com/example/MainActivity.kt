@@ -1,5 +1,6 @@
 package com.example
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -11,7 +12,12 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -19,7 +25,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.credentials.CredentialManager
 import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -28,15 +37,25 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.data.DailyQuizRepository
 import com.example.data.DocumentRepository
+import com.example.data.OfflineDownloadRepository
+import com.example.data.StudentProfileRepository
 import com.example.data.ThemePreferenceStore
 import com.example.data.authStateFlow
 import com.example.data.configureAppCheck
 import com.example.data.signOutUser
 import com.example.model.Subject
+import com.example.model.SubjectProgress
 import com.example.model.SubjectTab
+import com.example.model.UiState
+import com.example.ui.components.DarbarMotion
+import com.example.ui.components.LocalReducedMotion
+import com.example.ui.screens.AccountScreen
+import com.example.ui.screens.AiTutorScreen
 import com.example.ui.screens.AuthScreen
 import com.example.ui.screens.DailyQuizScreen
+import com.example.ui.screens.DownloadsScreen
 import com.example.ui.screens.HomeScreen
+import com.example.ui.screens.StudentProfileSetupScreen
 import com.example.ui.screens.SubjectScreen
 import com.example.ui.theme.DarbarTheme
 import com.example.viewmodel.DarbarViewModel
@@ -44,11 +63,15 @@ import com.google.firebase.Firebase
 import com.google.firebase.auth.auth
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 private sealed interface DarbarRoute {
     data object Home : DarbarRoute
     data class SubjectDetail(val subject: Subject) : DarbarRoute
     data object DailyQuiz : DarbarRoute
+    data object Downloads : DarbarRoute
+    data object Account : DarbarRoute
+    data object AiTutor : DarbarRoute
 }
 
 class MainActivity : ComponentActivity() {
@@ -78,6 +101,12 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        configureAppCheck(this, intent)
+    }
 }
 
 @Composable
@@ -88,24 +117,36 @@ private fun DarbarRootApp(
     val auth = remember { Firebase.auth }
     val currentUser by auth.authStateFlow()
         .collectAsStateWithLifecycle(initialValue = auth.currentUser)
+    val reducedMotion = LocalReducedMotion.current
+    val fadeMs = DarbarMotion.duration(DarbarMotion.PAGE_MS, reducedMotion)
 
-    val user = currentUser
-    if (user == null) {
-        AuthScreen(
-            isDarkTheme = isDarkTheme,
-            onToggleTheme = onToggleTheme,
-            onAuthSuccess = { /* AuthStateListener updates currentUser reactively */ }
-        )
-    } else {
-        // Key composition & ViewModel strictly by authenticated UID so account switches tear down cleanly
-        key(user.uid) {
-            val displayName = user.displayName?.takeIf { it.isNotBlank() } ?: "Student"
-            DarbarAuthenticatedShell(
-                currentUserId = user.uid,
-                currentUserName = displayName,
+    AnimatedContent(
+        targetState = currentUser?.uid,
+        transitionSpec = {
+            fadeIn(tween(fadeMs, easing = DarbarMotion.EaseOut)) togetherWith
+                fadeOut(tween(DarbarMotion.duration(DarbarMotion.FAST_MS, reducedMotion), easing = DarbarMotion.EaseOut))
+        },
+        label = "auth_root_transition"
+    ) { uid ->
+        if (uid == null) {
+            AuthScreen(
                 isDarkTheme = isDarkTheme,
-                onToggleTheme = onToggleTheme
+                onToggleTheme = onToggleTheme,
+                onAuthSuccess = { /* AuthStateListener updates currentUser reactively */ }
             )
+        } else {
+            // Key composition & ViewModel strictly by authenticated UID so account switches tear down cleanly
+            key(uid) {
+                val displayName = currentUser?.displayName?.takeIf { it.isNotBlank() } ?: "Student"
+                val userEmail = currentUser?.email.orEmpty()
+                DarbarAuthenticatedShell(
+                    currentUserId = uid,
+                    currentUserName = displayName,
+                    currentUserEmail = userEmail,
+                    isDarkTheme = isDarkTheme,
+                    onToggleTheme = onToggleTheme
+                )
+            }
         }
     }
 }
@@ -114,10 +155,13 @@ private fun DarbarRootApp(
 private fun DarbarAuthenticatedShell(
     currentUserId: String,
     currentUserName: String,
+    currentUserEmail: String,
     isDarkTheme: Boolean,
     onToggleTheme: () -> Unit
 ) {
     val context = LocalContext.current
+    val density = LocalDensity.current
+    val reducedMotion = LocalReducedMotion.current
     val scope = rememberCoroutineScope()
     val credentialManager = remember(context) { CredentialManager.create(context) }
 
@@ -134,6 +178,8 @@ private fun DarbarAuthenticatedShell(
                 DarbarViewModel(
                     documentRepository = DocumentRepository(db),
                     quizRepository = DailyQuizRepository(db),
+                    offlineDownloadRepository = OfflineDownloadRepository(app.applicationContext),
+                    studentProfileRepository = StudentProfileRepository(db),
                     currentUserId = currentUserId,
                     currentUserName = currentUserName
                 )
@@ -142,45 +188,110 @@ private fun DarbarAuthenticatedShell(
     )
 
     var activeRoute by remember { mutableStateOf<DarbarRoute>(DarbarRoute.Home) }
+    var aiTutorReturnRoute by remember { mutableStateOf<DarbarRoute>(DarbarRoute.Home) }
+    var downloadsReturnRoute by remember { mutableStateOf<DarbarRoute>(DarbarRoute.Home) }
 
+    val studentProfileState by viewModel.studentProfileState.collectAsStateWithLifecycle()
+    val effectiveStudentName by viewModel.effectiveStudentName.collectAsStateWithLifecycle()
+    val isSavingProfile by viewModel.isSavingProfile.collectAsStateWithLifecycle()
+    val profileError by viewModel.profileError.collectAsStateWithLifecycle()
     val isUploadUnlocked by viewModel.isUploadUnlocked.collectAsStateWithLifecycle()
     val activeSubjectTab by viewModel.activeSubjectTab.collectAsStateWithLifecycle()
     val searchQueries by viewModel.searchQueries.collectAsStateWithLifecycle()
     val sortOrder by viewModel.sortOrder.collectAsStateWithLifecycle()
     val documentsState by viewModel.filteredSubjectDocuments.collectAsStateWithLifecycle()
+    val subjectProgressMap by viewModel.subjectProgressMap.collectAsStateWithLifecycle()
+    val reviewedDocumentIds by viewModel.reviewedDocumentIds.collectAsStateWithLifecycle()
+    val offlineDownloads by viewModel.offlineDownloads.collectAsStateWithLifecycle()
+    val downloadedDocumentIds by viewModel.downloadedDocumentIds.collectAsStateWithLifecycle()
     val uploadStatus by viewModel.uploadStatus.collectAsStateWithLifecycle()
     val loadingDocumentId by viewModel.loadingDocumentId.collectAsStateWithLifecycle()
     val previewPayload by viewModel.previewPayload.collectAsStateWithLifecycle()
     val actionMessage by viewModel.actionMessage.collectAsStateWithLifecycle()
     val quizSession by viewModel.quizSession.collectAsStateWithLifecycle()
+    val aiTutorState by viewModel.aiTutorState.collectAsStateWithLifecycle()
+
+    // Gate first-time students so they enter their Name & Class once before entering the dashboard
+    when (val profileUi = studentProfileState) {
+        is UiState.Loading -> {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.background),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator()
+            }
+            return
+        }
+
+        is UiState.Success -> {
+            if (profileUi.data == null) {
+                StudentProfileSetupScreen(
+                    suggestedName = currentUserName,
+                    isSaving = isSavingProfile,
+                    errorMessage = profileError,
+                    onSaveProfile = { name, studentClass ->
+                        viewModel.saveStudentProfile(name, studentClass)
+                    },
+                    onSignOut = {
+                        signOutUser(
+                            credentialManager = credentialManager,
+                            scope = scope
+                        )
+                    }
+                )
+                return
+            }
+        }
+
+        is UiState.Error -> {
+            // Proceed gracefully with fallback name if profile fetch errors out
+        }
+    }
+
+    val savedProfile = (studentProfileState as? UiState.Success)?.data
+
+    val slidePx = remember(density, reducedMotion) {
+        if (reducedMotion) 0 else with(density) { DarbarMotion.SLIDE_DISTANCE_DP.toPx() }.roundToInt()
+    }
+    val pageDuration = DarbarMotion.duration(DarbarMotion.PAGE_MS, reducedMotion)
+    val exitDuration = DarbarMotion.duration(DarbarMotion.MODAL_EXIT_MS, reducedMotion)
 
     AnimatedContent(
         targetState = activeRoute,
         transitionSpec = {
-            val forward = targetState !is DarbarRoute.Home
+            val forward = when {
+                targetState is DarbarRoute.Home -> false
+                initialState is DarbarRoute.AiTutor && targetState is DarbarRoute.SubjectDetail -> false
+                initialState is DarbarRoute.Downloads && targetState is DarbarRoute.SubjectDetail -> false
+                initialState is DarbarRoute.Downloads && targetState is DarbarRoute.Account -> false
+                else -> true
+            }
             val dir = if (forward) 1 else -1
-            (fadeIn(tween(240)) + slideInHorizontally(tween(280)) { width ->
-                dir * (width / 7)
-            }) togetherWith (fadeOut(tween(180)) + slideOutHorizontally(tween(240)) { width ->
-                -dir * (width / 7)
-            })
+            val enter = fadeIn(tween(pageDuration, easing = DarbarMotion.EaseOut)) +
+                slideInHorizontally(tween(pageDuration, easing = DarbarMotion.EaseOut)) { dir * slidePx }
+            val exit = fadeOut(tween(exitDuration, easing = DarbarMotion.EaseOut)) +
+                slideOutHorizontally(tween(exitDuration, easing = DarbarMotion.EaseOut)) { -dir * slidePx }
+            enter togetherWith exit
         },
         label = "darbar_page_transition"
     ) { route ->
         when (route) {
             is DarbarRoute.Home -> {
                 HomeScreen(
-                    userName = currentUserName,
+                    userName = effectiveStudentName,
+                    studentClass = savedProfile?.studentClass,
                     isDarkTheme = isDarkTheme,
                     isUploadUnlocked = isUploadUnlocked,
                     todayQuizAttempt = quizSession.todayAttempt,
                     todayDateKey = viewModel.todayDateFormatted(),
+                    subjectProgressMap = subjectProgressMap,
+                    offlineDownloadCount = offlineDownloads.size,
+                    offlineTotalBytes = offlineDownloads.sumOf { it.fileSizeBytes },
                     onToggleTheme = onToggleTheme,
-                    onSignOut = {
-                        signOutUser(
-                            credentialManager = credentialManager,
-                            scope = scope
-                        )
+                    onOpenAccount = {
+                        activeRoute = DarbarRoute.Account
                     },
                     onSelectSubject = { subject ->
                         viewModel.openSubject(subject)
@@ -188,6 +299,15 @@ private fun DarbarAuthenticatedShell(
                     },
                     onOpenDailyQuiz = {
                         activeRoute = DarbarRoute.DailyQuiz
+                    },
+                    onOpenDownloads = {
+                        downloadsReturnRoute = DarbarRoute.Home
+                        activeRoute = DarbarRoute.Downloads
+                    },
+                    onOpenAiTutor = {
+                        aiTutorReturnRoute = DarbarRoute.Home
+                        viewModel.setChatFocusSubject(null)
+                        activeRoute = DarbarRoute.AiTutor
                     }
                 )
             }
@@ -202,6 +322,9 @@ private fun DarbarAuthenticatedShell(
                     searchQuery = searchQueries[subject.id].orEmpty(),
                     sortOrder = sortOrder,
                     documentsState = documentsState,
+                    subjectProgress = subjectProgressMap[subject] ?: SubjectProgress(subject),
+                    reviewedDocumentIds = reviewedDocumentIds,
+                    downloadedDocumentIds = downloadedDocumentIds,
                     uploadStatus = uploadStatus,
                     loadingDocumentId = loadingDocumentId,
                     previewPayload = previewPayload,
@@ -225,10 +348,21 @@ private fun DarbarAuthenticatedShell(
                     onResetUploadStatus = { viewModel.resetUploadStatus() },
                     onPreviewDocument = { doc -> viewModel.openDocumentPreview(doc) },
                     onDismissPreview = { viewModel.dismissPreview() },
+                    onSaveOfflineDocument = { doc -> viewModel.downloadDocumentForOffline(doc) },
                     onDownloadDocument = { doc, onReady ->
                         viewModel.fetchDocumentForDownload(doc, onReady)
                     },
                     onDeleteDocument = { doc -> viewModel.deleteDocument(doc) },
+                    onToggleReviewed = { doc -> viewModel.toggleMaterialReviewed(doc) },
+                    onOpenDownloads = {
+                        downloadsReturnRoute = route
+                        activeRoute = DarbarRoute.Downloads
+                    },
+                    onAskAiTutor = {
+                        aiTutorReturnRoute = route
+                        viewModel.setChatFocusSubject(subject)
+                        activeRoute = DarbarRoute.AiTutor
+                    },
                     onPostMessage = { msg -> viewModel.postActionMessage(msg) },
                     onClearMessage = { viewModel.clearActionMessage() }
                 )
@@ -246,6 +380,74 @@ private fun DarbarAuthenticatedShell(
                     onOpenReview = { viewModel.openQuizReview() },
                     onBackFromReview = { viewModel.backToQuizIntroOrResult() },
                     onNavigateBack = { activeRoute = DarbarRoute.Home }
+                )
+            }
+
+            is DarbarRoute.Downloads -> {
+                DownloadsScreen(
+                    downloads = offlineDownloads,
+                    loadingDocumentId = loadingDocumentId,
+                    previewPayload = previewPayload,
+                    actionMessage = actionMessage,
+                    onPreviewOffline = { offlineDoc -> viewModel.openOfflinePreview(offlineDoc) },
+                    onDismissPreview = { viewModel.dismissPreview() },
+                    onGetOfflineFile = { offlineDoc -> viewModel.getOfflineFile(offlineDoc) },
+                    onReadOfflineBytes = { offlineDoc, onReady ->
+                        viewModel.readOfflineBytesForExport(offlineDoc, onReady)
+                    },
+                    onRemoveOffline = { offlineDoc -> viewModel.removeOfflineDownload(offlineDoc) },
+                    onPostMessage = { msg -> viewModel.postActionMessage(msg) },
+                    onClearMessage = { viewModel.clearActionMessage() },
+                    onNavigateBack = { activeRoute = downloadsReturnRoute }
+                )
+            }
+
+            is DarbarRoute.Account -> {
+                AccountScreen(
+                    studentProfile = savedProfile,
+                    fallbackName = currentUserName,
+                    userEmail = currentUserEmail,
+                    isDarkTheme = isDarkTheme,
+                    isUploadUnlocked = isUploadUnlocked,
+                    isSavingProfile = isSavingProfile,
+                    profileError = profileError,
+                    subjectProgressMap = subjectProgressMap,
+                    offlineDownloadCount = offlineDownloads.size,
+                    offlineTotalBytes = offlineDownloads.sumOf { it.fileSizeBytes },
+                    todayQuizAttempt = quizSession.todayAttempt,
+                    actionMessage = actionMessage,
+                    onSaveProfile = { name, studentClass, onDone ->
+                        viewModel.saveStudentProfile(name, studentClass, onSaved = onDone)
+                    },
+                    onToggleTheme = onToggleTheme,
+                    onLockUploads = { viewModel.lockUploads() },
+                    onOpenDownloads = {
+                        downloadsReturnRoute = DarbarRoute.Account
+                        activeRoute = DarbarRoute.Downloads
+                    },
+                    onOpenDailyQuiz = {
+                        activeRoute = DarbarRoute.DailyQuiz
+                    },
+                    onSignOut = {
+                        signOutUser(
+                            credentialManager = credentialManager,
+                            scope = scope
+                        )
+                    },
+                    onClearMessage = { viewModel.clearActionMessage() },
+                    onNavigateBack = { activeRoute = DarbarRoute.Home }
+                )
+            }
+
+            is DarbarRoute.AiTutor -> {
+                AiTutorScreen(
+                    chatState = aiTutorState,
+                    onSelectFocusSubject = { subject -> viewModel.setChatFocusSubject(subject) },
+                    onSendMessage = { text -> viewModel.sendChatMessage(text) },
+                    onStopGenerating = { viewModel.stopChatGeneration() },
+                    onRetryLastFailed = { viewModel.retryLastFailedChatMessage() },
+                    onClearChat = { viewModel.clearChatHistory() },
+                    onNavigateBack = { activeRoute = aiTutorReturnRoute }
                 )
             }
         }

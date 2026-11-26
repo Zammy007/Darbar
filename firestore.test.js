@@ -91,6 +91,10 @@ test("Unauthenticated users cannot read or write any collection", async () => {
   await assertFails(
     unauthDb.collection("users").doc(ALICE_UID).collection("quiz_attempts").get()
   );
+  await assertFails(
+    unauthDb.collection("users").doc(ALICE_UID).collection("reviewed_materials").get()
+  );
+  await assertFails(unauthDb.collection("users").doc(ALICE_UID).get());
 });
 
 test("StudyDocument: Kotlin create, chunk upload, finalize update, and cross-user view succeed", async () => {
@@ -146,6 +150,22 @@ test("StudyDocument: Kotlin create, chunk upload, finalize update, and cross-use
       .collection("chunks")
       .where("visibility", "==", "public")
       .where("documentId", "==", "doc_1")
+      .get()
+  );
+
+  // 6. Bob queries all 6 subjects' public documents for the Home progress tracker
+  await assertSucceeds(
+    bobDb
+      .collection("documents")
+      .where("visibility", "==", "public")
+      .where("subjectId", "in", [
+        "bengali",
+        "english",
+        "physics",
+        "mathematics",
+        "chemistry",
+        "biology",
+      ])
       .get()
   );
 });
@@ -348,5 +368,173 @@ test("QuizAttempt: strictly isolated per user with valid create/update/list", as
         completedAt: ts,
         updatedAt: ts,
       })
+  );
+});
+
+test("ReviewedMaterial: strictly isolated per user with valid create/update/list/delete and validation", async () => {
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
+  const bobDb = testEnv.authenticatedContext(BOB_UID).firestore();
+  const ts = pastDate(5000);
+
+  const reviewRef = aliceDb
+    .collection("users")
+    .doc(ALICE_UID)
+    .collection("reviewed_materials")
+    .doc("doc_phys_1");
+
+  // 1. Alice marks a physics document as reviewed
+  await assertSucceeds(
+    reviewRef.set({
+      userId: ALICE_UID,
+      documentId: "doc_phys_1",
+      subjectId: "physics",
+      reviewedAt: ts,
+    })
+  );
+
+  // 2. Alice can list and idempotently update reviewedAt
+  await assertSucceeds(
+    aliceDb.collection("users").doc(ALICE_UID).collection("reviewed_materials").get()
+  );
+  await assertSucceeds(
+    reviewRef.set({
+      userId: ALICE_UID,
+      documentId: "doc_phys_1",
+      subjectId: "physics",
+      reviewedAt: pastDate(1000),
+    })
+  );
+
+  // 3. Reject invalid subjectId, ghost fields, future timestamp, and subjectId mutation
+  await assertFails(
+    aliceDb
+      .collection("users")
+      .doc(ALICE_UID)
+      .collection("reviewed_materials")
+      .doc("doc_bad_subj")
+      .set({
+        userId: ALICE_UID,
+        documentId: "doc_bad_subj",
+        subjectId: "astrology",
+        reviewedAt: ts,
+      })
+  );
+  await assertFails(
+    aliceDb
+      .collection("users")
+      .doc(ALICE_UID)
+      .collection("reviewed_materials")
+      .doc("doc_ghost")
+      .set({
+        userId: ALICE_UID,
+        documentId: "doc_ghost",
+        subjectId: "chemistry",
+        reviewedAt: ts,
+        extraFlag: true,
+      })
+  );
+  await assertFails(
+    aliceDb
+      .collection("users")
+      .doc(ALICE_UID)
+      .collection("reviewed_materials")
+      .doc("doc_future")
+      .set({
+        userId: ALICE_UID,
+        documentId: "doc_future",
+        subjectId: "biology",
+        reviewedAt: new Date(Date.now() + 60000),
+      })
+  );
+  await assertFails(
+    reviewRef.update({
+      subjectId: "chemistry",
+      reviewedAt: pastDate(500),
+    })
+  );
+
+  // 4. Bob cannot read, list, write, or delete Alice's reviewed progress
+  await assertFails(
+    bobDb
+      .collection("users")
+      .doc(ALICE_UID)
+      .collection("reviewed_materials")
+      .doc("doc_phys_1")
+      .get()
+  );
+  await assertFails(
+    bobDb.collection("users").doc(ALICE_UID).collection("reviewed_materials").get()
+  );
+  await assertFails(
+    bobDb
+      .collection("users")
+      .doc(ALICE_UID)
+      .collection("reviewed_materials")
+      .doc("doc_phys_1")
+      .delete()
+  );
+
+  // 5. Alice can unmark (delete) her own reviewed material
+  await assertSucceeds(reviewRef.delete());
+});
+
+test("StudentProfile: private per-user profile create, update, get, and strict isolation", async () => {
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
+  const bobDb = testEnv.authenticatedContext(BOB_UID).firestore();
+  const ts = pastDate(5000);
+
+  const aliceProfileRef = aliceDb.collection("users").doc(ALICE_UID);
+
+  // 1. Alice creates her student profile (name + class)
+  await assertSucceeds(
+    aliceProfileRef.set({
+      userId: ALICE_UID,
+      studentName: "Aarav Sen",
+      studentClass: "Class 10",
+      createdAt: ts,
+      updatedAt: ts,
+    })
+  );
+
+  // 2. Alice can read and update her own name and class
+  await assertSucceeds(aliceProfileRef.get());
+  await assertSucceeds(
+    aliceProfileRef.update({
+      studentName: "Aarav Sen Gupta",
+      studentClass: "Class 11",
+      updatedAt: pastDate(1000),
+    })
+  );
+
+  // 3. Reject empty name, ghost fields, immutable createdAt change, and collection listing
+  await assertFails(
+    aliceProfileRef.update({
+      studentName: "",
+      studentClass: "Class 11",
+      updatedAt: pastDate(500),
+    })
+  );
+  await assertFails(
+    aliceProfileRef.update({
+      studentName: "Aarav",
+      role: "admin",
+      updatedAt: pastDate(500),
+    })
+  );
+  await assertFails(
+    aliceProfileRef.update({
+      createdAt: pastDate(500),
+      updatedAt: pastDate(500),
+    })
+  );
+  await assertFails(aliceDb.collection("users").get());
+
+  // 4. Bob cannot read, update, or overwrite Alice's profile
+  await assertFails(bobDb.collection("users").doc(ALICE_UID).get());
+  await assertFails(
+    bobDb.collection("users").doc(ALICE_UID).update({
+      studentName: "Hijacked",
+      updatedAt: pastDate(500),
+    })
   );
 });

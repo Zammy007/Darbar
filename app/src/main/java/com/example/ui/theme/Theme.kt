@@ -7,25 +7,28 @@ import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
+import com.example.ui.components.LocalReducedMotion
+import com.example.ui.components.rememberReducedMotionEnabled
 
 private val DarbarLightColorScheme = lightColorScheme(
-    primary = DarbarNavy,
-    onPrimary = Color.White,
-    primaryContainer = Color(0xFFDCE7F7),
-    onPrimaryContainer = DarbarNavyDark,
-    secondary = DarbarTeal,
-    onSecondary = Color.White,
-    secondaryContainer = DarbarTealSoft,
-    onSecondaryContainer = Color(0xFF064E3B),
-    tertiary = DarbarGold,
-    onTertiary = Color.White,
-    tertiaryContainer = DarbarGoldSoft,
-    onTertiaryContainer = Color(0xFF5C3400),
+    primary = DarbarBlack,
+    onPrimary = DarbarWhite,
+    primaryContainer = Color(0xFFEEEEF0),
+    onPrimaryContainer = DarbarBlack,
+    secondary = DarbarCharcoal,
+    onSecondary = DarbarWhite,
+    secondaryContainer = Color(0xFFEAEAEF),
+    onSecondaryContainer = DarbarBlack,
+    tertiary = Color(0xFF27272A),
+    onTertiary = DarbarWhite,
+    tertiaryContainer = Color(0xFFF4F4F5),
+    onTertiaryContainer = DarbarCharcoal,
     background = LightBackground,
     onBackground = LightTextPrimary,
     surface = LightSurface,
@@ -33,26 +36,26 @@ private val DarbarLightColorScheme = lightColorScheme(
     surfaceVariant = LightSurfaceVariant,
     onSurfaceVariant = LightTextSecondary,
     outline = LightOutline,
-    outlineVariant = Color(0xFFE6E3DA),
+    outlineVariant = LightOutlineVariant,
     error = StatusErrorLight,
-    onError = Color.White,
+    onError = DarbarWhite,
     errorContainer = StatusErrorContainerLight,
-    onErrorContainer = Color(0xFF7F1D1D)
+    onErrorContainer = DarbarBlack
 )
 
 private val DarbarDarkColorScheme = darkColorScheme(
-    primary = DarbarGoldBright,
-    onPrimary = DarbarNavyDark,
-    primaryContainer = Color(0xFF1F385C),
-    onPrimaryContainer = Color(0xFFE2EEFF),
-    secondary = DarbarTealLight,
-    onSecondary = Color(0xFF052E2B),
-    secondaryContainer = Color(0xFF134E4A),
-    onSecondaryContainer = Color(0xFFCCFBF1),
-    tertiary = DarbarGoldBright,
-    onTertiary = DarbarNavyDark,
-    tertiaryContainer = Color(0xFF47310A),
-    onTertiaryContainer = Color(0xFFFFE7B0),
+    primary = DarbarWhite,
+    onPrimary = DarbarBlack,
+    primaryContainer = Color(0xFF1F1F23),
+    onPrimaryContainer = Color(0xFFFAFAFA),
+    secondary = Color(0xFFE4E4E7),
+    onSecondary = DarbarBlack,
+    secondaryContainer = Color(0xFF26262A),
+    onSecondaryContainer = Color(0xFFFAFAFA),
+    tertiary = Color(0xFFD4D4D8),
+    onTertiary = DarbarBlack,
+    tertiaryContainer = Color(0xFF27272A),
+    onTertiaryContainer = Color(0xFFF4F4F5),
     background = DarkBackground,
     onBackground = DarkTextPrimary,
     surface = DarkSurface,
@@ -60,11 +63,11 @@ private val DarbarDarkColorScheme = darkColorScheme(
     surfaceVariant = DarkSurfaceVariant,
     onSurfaceVariant = DarkTextSecondary,
     outline = DarkOutline,
-    outlineVariant = Color(0xFF1E304C),
+    outlineVariant = DarkOutlineVariant,
     error = StatusErrorDark,
-    onError = Color(0xFF450A0A),
+    onError = DarbarBlack,
     errorContainer = StatusErrorContainerDark,
-    onErrorContainer = Color(0xFFFECACA)
+    onErrorContainer = Color(0xFFFAFAFA)
 )
 
 val DarbarShapes = Shapes(
@@ -80,6 +83,7 @@ fun DarbarTheme(
     content: @Composable () -> Unit
 ) {
     val colorScheme = if (darkTheme) DarbarDarkColorScheme else DarbarLightColorScheme
+    val reducedMotion = rememberReducedMotionEnabled()
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
@@ -91,10 +95,12 @@ fun DarbarTheme(
         }
     }
 
-    MaterialTheme(
-        colorScheme = colorScheme,
-        typography = DarbarTypography,
-        shapes = DarbarShapes,
-        content = content
-    )
+    CompositionLocalProvider(LocalReducedMotion provides reducedMotion) {
+        MaterialTheme(
+            colorScheme = colorScheme,
+            typography = DarbarTypography,
+            shapes = DarbarShapes,
+            content = content
+        )
+    }
 }

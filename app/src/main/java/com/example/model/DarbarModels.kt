@@ -110,6 +110,8 @@ enum class Subject(
     }
 }
 
+val ALL_SUBJECT_IDS: List<String> = Subject.entries.map { it.id }
+
 enum class SortOrder(val label: String) {
     NEWEST_FIRST("Newest first"),
     OLDEST_FIRST("Oldest first"),
@@ -205,6 +207,97 @@ data class PreviewPayload(
 
     override fun hashCode(): Int = 31 * document.id.hashCode() + bytes.contentHashCode()
 }
+
+@Keep
+@IgnoreExtraProperties
+data class ReviewedMaterial(
+    @DocumentId val id: String = "",
+    val userId: String = "",
+    val documentId: String = "",
+    val subjectId: String = "",
+    @ServerTimestamp val reviewedAt: Timestamp? = null
+)
+
+data class SubjectProgress(
+    val subject: Subject,
+    val reviewedCount: Int = 0,
+    val totalCount: Int = 0
+) {
+    val fraction: Float
+        get() = if (totalCount <= 0) 0f else (reviewedCount.toFloat() / totalCount.toFloat()).coerceIn(0f, 1f)
+
+    val percent: Int
+        get() = if (totalCount <= 0) 0 else ((fraction * 100f) + 0.5f).toInt().coerceIn(0, 100)
+
+    val isComplete: Boolean
+        get() = totalCount > 0 && reviewedCount >= totalCount
+}
+
+enum class ChatRole {
+    USER,
+    MODEL
+}
+
+data class ChatMessage(
+    val id: String,
+    val role: ChatRole,
+    val text: String,
+    val isStreaming: Boolean = false,
+    val isError: Boolean = false,
+    val timestampMs: Long = System.currentTimeMillis()
+)
+
+data class OfflineDocument(
+    val documentId: String,
+    val subjectId: String,
+    val title: String,
+    val description: String? = null,
+    val fileName: String,
+    val fileExtension: String,
+    val mimeType: String,
+    val fileSizeBytes: Long,
+    val localFileName: String,
+    val downloadedAtMillis: Long
+) {
+    fun canPreview(): Boolean {
+        val ext = fileExtension.lowercase()
+        return ext == "pdf" || ext in PREVIEWABLE_IMAGE_EXTENSIONS
+    }
+
+    fun toStudyDocument(): StudyDocument = StudyDocument(
+        id = documentId,
+        subjectId = subjectId,
+        title = title,
+        description = description,
+        fileName = fileName,
+        fileExtension = fileExtension,
+        mimeType = mimeType,
+        fileSizeBytes = fileSizeBytes,
+        uploadComplete = true
+    )
+}
+
+@Keep
+@IgnoreExtraProperties
+data class StudentProfile(
+    @DocumentId val id: String = "",
+    val userId: String = "",
+    val studentName: String = "",
+    val studentClass: String = "",
+    @ServerTimestamp val createdAt: Timestamp? = null,
+    @ServerTimestamp val updatedAt: Timestamp? = null
+)
+
+val STUDENT_CLASS_OPTIONS: List<String> = listOf(
+    "Class 6",
+    "Class 7",
+    "Class 8",
+    "Class 9",
+    "Class 10",
+    "Class 11",
+    "Class 12",
+    "Undergraduate"
+)
 
 // Curated, factually verified fallback bank offered only if Gemini generation fails
 val FALLBACK_GK_QUESTIONS: List<QuizQuestion> = listOf(

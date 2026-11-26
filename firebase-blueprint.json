@@ -211,6 +211,73 @@
         "completedAt",
         "updatedAt"
       ]
+    },
+    "ReviewedMaterial": {
+      "title": "ReviewedMaterial",
+      "description": "Tracks a study document reviewed by a specific student so progress bars across all six subjects stay accurate across devices.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Owner Firebase Auth UID."
+        },
+        "documentId": {
+          "type": "string",
+          "description": "ID of the reviewed StudyDocument."
+        },
+        "subjectId": {
+          "type": "string",
+          "description": "Subject identifier the reviewed document belongs to.",
+          "enum": ["bengali", "english", "physics", "mathematics", "chemistry", "biology"]
+        },
+        "reviewedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the material was reviewed (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": [
+        "userId",
+        "documentId",
+        "subjectId",
+        "reviewedAt"
+      ]
+    },
+    "StudentProfile": {
+      "title": "StudentProfile",
+      "description": "Private student profile storing the student's preferred name and class/grade displayed in the Account section.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Owner Firebase Auth UID."
+        },
+        "studentName": {
+          "type": "string",
+          "description": "Student's display name entered during onboarding or edited in Account (1-80 characters)."
+        },
+        "studentClass": {
+          "type": "string",
+          "description": "Student's class or grade level (1-40 characters, e.g. Class 10, Class 12, Undergraduate)."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the student profile was first created (FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of the last profile update (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": [
+        "userId",
+        "studentName",
+        "studentClass",
+        "createdAt",
+        "updatedAt"
+      ]
     }
   },
   "firestore": {
@@ -226,9 +293,17 @@
       "schema": { "$ref": "#/entities/DailyQuiz" },
       "description": "Once-per-day Gemini-generated General Knowledge quiz keyed by YYYY-MM-DD."
     },
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/StudentProfile" },
+      "description": "Private student profile containing name and class for the Account section."
+    },
     "/users/{userId}/quiz_attempts/{dateKey}": {
       "schema": { "$ref": "#/entities/QuizAttempt" },
       "description": "Private per-student daily quiz score and answer history."
+    },
+    "/users/{userId}/reviewed_materials/{documentId}": {
+      "schema": { "$ref": "#/entities/ReviewedMaterial" },
+      "description": "Private per-student record of reviewed study materials powering per-subject visual progress tracking."
     }
   }
 }

@@ -82,6 +82,21 @@ service cloud.firestore {
              data.updatedAt is timestamp && data.updatedAt <= request.time;
     }
 
+    function isValidReviewedMaterial(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.documentId is string && isValidId(data.documentId) &&
+             data.subjectId is string && isAllowedSubject(data.subjectId) &&
+             data.reviewedAt is timestamp && data.reviewedAt <= request.time;
+    }
+
+    function isValidStudentProfile(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.studentName is string && data.studentName.size() >= 1 && data.studentName.size() <= 80 &&
+             data.studentClass is string && data.studentClass.size() >= 1 && data.studentClass.size() <= 40 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
     // --- COLLECTION: SHARED STUDY DOCUMENTS ---
     match /documents/{documentId} {
       allow get: if isSignedIn() &&
@@ -214,6 +229,54 @@ service cloud.firestore {
                        ]);
 
       allow delete: if isSignedIn() && request.auth.uid == userId && isValidDateKey(dateKey);
+    }
+
+    // --- COLLECTION: PRIVATE USER REVIEWED MATERIALS PROGRESS ---
+    match /users/{userId}/reviewed_materials/{documentId} {
+      allow get: if isSignedIn() && request.auth.uid == userId && isValidId(documentId);
+      allow list: if isSignedIn() && request.auth.uid == userId;
+
+      allow create: if isSignedIn() &&
+                       request.auth.uid == userId &&
+                       isValidId(documentId) &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().documentId == documentId &&
+                       incoming().keys().hasAll(['userId', 'documentId', 'subjectId', 'reviewedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'documentId', 'subjectId', 'reviewedAt']) &&
+                       isValidReviewedMaterial(incoming());
+
+      allow update: if isSignedIn() &&
+                       request.auth.uid == userId &&
+                       isValidId(documentId) &&
+                       isValidReviewedMaterial(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().documentId == existing().documentId &&
+                       incoming().subjectId == existing().subjectId &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['reviewedAt']);
+
+      allow delete: if isSignedIn() && request.auth.uid == userId && isValidId(documentId);
+    }
+
+    // --- COLLECTION: PRIVATE STUDENT ACCOUNT PROFILE ---
+    match /users/{userId} {
+      allow get: if isSignedIn() && request.auth.uid == userId;
+      allow list: if false;
+
+      allow create: if isSignedIn() &&
+                       request.auth.uid == userId &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().keys().hasAll(['userId', 'studentName', 'studentClass', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'studentName', 'studentClass', 'createdAt', 'updatedAt']) &&
+                       isValidStudentProfile(incoming());
+
+      allow update: if isSignedIn() &&
+                       request.auth.uid == userId &&
+                       isValidStudentProfile(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['studentName', 'studentClass', 'updatedAt']);
+
+      allow delete: if isSignedIn() && request.auth.uid == userId;
     }
   }
 }

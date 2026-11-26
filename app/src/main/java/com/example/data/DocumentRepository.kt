@@ -7,9 +7,11 @@ import android.util.Base64
 import android.webkit.MimeTypeMap
 import com.example.R
 import com.example.model.ALLOWED_FILE_EXTENSIONS
+import com.example.model.ALL_SUBJECT_IDS
 import com.example.model.FILE_CHUNK_RAW_BYTES
 import com.example.model.MAX_UPLOAD_BYTES
 import com.example.model.PickedFileInfo
+import com.example.model.ReviewedMaterial
 import com.example.model.StudyDocument
 import com.example.model.Subject
 import com.google.firebase.Firebase
@@ -78,6 +80,123 @@ class DocumentRepository(
                     throw error
                 }
         )
+    }
+
+    /**
+     * Real-time stream of all completed public documents across all 6 subjects.
+     * Powers live per-subject totals in the Home visual progress tracker.
+     */
+    fun observeAllPublicDocuments(): Flow<List<StudyDocument>> = flow {
+        val uid = requireUserId()
+        val path = "documents"
+        emitAll(
+            db.collection(path)
+                .whereEqualTo("visibility", "public")
+                .whereIn("subjectId", ALL_SUBJECT_IDS)
+                .snapshots()
+                .map { snapshot ->
+                    snapshot.toObjects(
+                        StudyDocument::class.java,
+                        DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
+                    ).filter { it.uploadComplete }
+                }
+                .catch { error ->
+                    val firestoreError = generateSequence(error) { it.cause }
+                        .filterIsInstance<FirebaseFirestoreException>()
+                        .firstOrNull()
+                    if (firestoreError == null && error is CancellationException) throw error
+                    val exceptionToLog = firestoreError ?: (error as? Exception)
+                    if (exceptionToLog != null && auth.currentUser?.uid == uid) {
+                        handleFirestoreError(exceptionToLog, OperationType.LIST, path)
+                    }
+                    throw error
+                }
+        )
+    }
+
+    /**
+     * Real-time stream of the signed-in student's reviewed study materials.
+     */
+    fun observeReviewedMaterials(): Flow<List<ReviewedMaterial>> = flow {
+        val uid = requireUserId()
+        val path = "users/$uid/reviewed_materials"
+        emitAll(
+            db.collection("users")
+                .document(uid)
+                .collection("reviewed_materials")
+                .snapshots()
+                .map { snapshot ->
+                    snapshot.toObjects(
+                        ReviewedMaterial::class.java,
+                        DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
+                    )
+                }
+                .catch { error ->
+                    val firestoreError = generateSequence(error) { it.cause }
+                        .filterIsInstance<FirebaseFirestoreException>()
+                        .firstOrNull()
+                    if (firestoreError == null && error is CancellationException) throw error
+                    val exceptionToLog = firestoreError ?: (error as? Exception)
+                    if (exceptionToLog != null && auth.currentUser?.uid == uid) {
+                        handleFirestoreError(exceptionToLog, OperationType.LIST, path)
+                    }
+                    throw error
+                }
+        )
+    }
+
+    /**
+     * Marks a study material as reviewed for the signed-in student (persisted in Firestore).
+     */
+    suspend fun markMaterialReviewed(documentId: String, subject: Subject): Result<Unit> {
+        var docPath = "users/unauthenticated/reviewed_materials/$documentId"
+        return try {
+            val uid = requireUserId()
+            require(documentId.isNotBlank()) { "Document ID cannot be blank." }
+            docPath = "users/$uid/reviewed_materials/$documentId"
+            val docRef = db.collection("users")
+                .document(uid)
+                .collection("reviewed_materials")
+                .document(documentId)
+
+            val payload = mapOf(
+                "userId" to uid,
+                "documentId" to documentId,
+                "subjectId" to subject.id,
+                "reviewedAt" to FieldValue.serverTimestamp()
+            )
+            docRef.set(payload).await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.WRITE, docPath)
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Removes a study material from the signed-in student's reviewed list.
+     */
+    suspend fun unmarkMaterialReviewed(documentId: String): Result<Unit> {
+        var docPath = "users/unauthenticated/reviewed_materials/$documentId"
+        return try {
+            val uid = requireUserId()
+            require(documentId.isNotBlank()) { "Document ID cannot be blank." }
+            docPath = "users/$uid/reviewed_materials/$documentId"
+            db.collection("users")
+                .document(uid)
+                .collection("reviewed_materials")
+                .document(documentId)
+                .delete()
+                .await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.DELETE, docPath)
+            Result.failure(e)
+        }
     }
 
     /**

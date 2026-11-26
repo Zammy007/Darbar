@@ -9,8 +9,12 @@ import com.example.model.QuizQuestion
 import com.google.firebase.Firebase
 import com.google.firebase.Timestamp
 import com.google.firebase.ai.ai
+import com.google.firebase.ai.type.GenerativeBackend
+import com.google.firebase.ai.type.RequestOptions
 import com.google.firebase.ai.type.Schema
+import com.google.firebase.ai.type.ThinkingLevel
 import com.google.firebase.ai.type.generationConfig
+import com.google.firebase.ai.type.thinkingConfig
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.auth
 import com.google.firebase.firestore.DocumentSnapshot
@@ -60,13 +64,17 @@ class DailyQuizRepository(
 
     // Lazily initialized Firebase AI Logic model so FirebaseApp/AppCheck runs first
     private val geminiModel by lazy {
-        Firebase.ai.generativeModel(
+        Firebase.ai(backend = GenerativeBackend.googleAI()).generativeModel(
             modelName = "gemini-3.8-flash",
             generationConfig = generationConfig {
                 responseMimeType = "application/json"
                 responseSchema = quizSchema
                 temperature = 0.6f
-            }
+                thinkingConfig = thinkingConfig {
+                    thinkingLevel = ThinkingLevel.LOW
+                }
+            },
+            requestOptions = RequestOptions(timeoutInMillis = 55_000L)
         )
     }
 

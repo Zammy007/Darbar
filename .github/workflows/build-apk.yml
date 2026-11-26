@@ -67,13 +67,16 @@ jobs:
         with:
           gradle-version: "9.3.1"
 
-      - name: Create temporary debug keystore
+      - name: Prepare debug keystore
         shell: bash
         run: |
           set -euo pipefail
           KEYSTORE_PATH="./debug.keystore"
           if [ -f "${KEYSTORE_PATH}" ]; then
             echo "Debug keystore already exists; skipping generation."
+          elif [ -f "./debug.keystore.base64" ]; then
+            base64 -d ./debug.keystore.base64 > "${KEYSTORE_PATH}"
+            echo "Decoded project debug.keystore from debug.keystore.base64 (preserves Firebase Google Sign-In SHA fingerprint)."
           else
             KEYTOOL_BIN="${JAVA_HOME}/bin/keytool"
             if [ ! -x "${KEYTOOL_BIN}" ]; then
@@ -93,10 +96,10 @@ jobs:
           fi
 
           if [ ! -f "${KEYSTORE_PATH}" ] || [ ! -s "${KEYSTORE_PATH}" ]; then
-            echo "::error::Failed to verify temporary debug keystore at ${KEYSTORE_PATH}."
+            echo "::error::Failed to verify debug keystore at ${KEYSTORE_PATH}."
             exit 1
           fi
-          echo "Temporary debug keystore is ready."
+          echo "Debug keystore is ready."
 
       - name: Build debug APK
         shell: bash
@@ -158,14 +161,8 @@ jobs:
             exit 1
           fi
 
-          RAW_REPO_NAME="${GITHUB_REPOSITORY#*/}"
-          SAFE_REPO_NAME="$(printf '%s' "${RAW_REPO_NAME}" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9._-]+/-/g; s/^-+//; s/-+$//; s/-+/-/g')"
-          if [ -z "${SAFE_REPO_NAME}" ]; then
-            SAFE_REPO_NAME="android-app"
-          fi
-
           TEMP_RELEASE_DIR="$(mktemp -d "${RUNNER_TEMP}/release-apk-XXXXXX")"
-          ASSET_NAME="${SAFE_REPO_NAME}-debug-build-${GITHUB_RUN_NUMBER}.apk"
+          ASSET_NAME="darbar-debug.apk"
           ASSET_PATH="${TEMP_RELEASE_DIR}/${ASSET_NAME}"
 
           cp -- "${SOURCE_APK}" "${ASSET_PATH}"

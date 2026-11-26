@@ -1,10 +1,9 @@
 package com.example.ui.screens
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.slideInVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,10 +12,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
@@ -34,7 +33,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -50,6 +48,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -63,8 +63,15 @@ import com.example.R
 import com.example.data.attemptAutoSignIn
 import com.example.data.onGoogleSignInClicked
 import com.example.ui.components.DarbarFooter
-import com.example.ui.theme.DarbarGoldBright
-import com.example.ui.theme.DarbarNavyDark
+import com.example.ui.components.MotionIconButton
+import com.example.ui.components.StaggeredFadeIn
+import com.example.ui.components.interactiveButtonMotion
+import com.example.ui.theme.IconActionBlue
+import com.example.ui.theme.IconAiViolet
+import com.example.ui.theme.IconBrandIndigo
+import com.example.ui.theme.IconMoonIndigo
+import com.example.ui.theme.IconSuccessEmerald
+import com.example.ui.theme.IconWarningAmber
 
 @Composable
 fun AuthScreen(
@@ -75,13 +82,15 @@ fun AuthScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val credentialManager = remember(context) { CredentialManager.create(context) }
+    val signInInteraction = remember { MutableInteractionSource() }
+    val grayscaleFilter = remember {
+        ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0f) })
+    }
 
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
-    var contentVisible by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
-        contentVisible = true
         attemptAutoSignIn(
             context = context,
             credentialManager = credentialManager,
@@ -126,7 +135,7 @@ fun AuthScreen(
                             Icon(
                                 imageVector = Icons.Rounded.School,
                                 contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onPrimary,
+                                tint = IconBrandIndigo,
                                 modifier = Modifier.size(22.dp)
                             )
                         }
@@ -138,115 +147,122 @@ fun AuthScreen(
                         )
                     }
 
-                    IconButton(
+                    MotionIconButton(
                         onClick = onToggleTheme,
                         modifier = Modifier.testTag("auth_theme_toggle")
                     ) {
                         Icon(
                             imageVector = if (isDarkTheme) Icons.Rounded.LightMode else Icons.Rounded.DarkMode,
                             contentDescription = stringResource(R.string.toggle_theme_cd),
-                            tint = MaterialTheme.colorScheme.onBackground
+                            tint = if (isDarkTheme) IconWarningAmber else IconMoonIndigo
                         )
                     }
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                AnimatedVisibility(
-                    visible = contentVisible,
-                    enter = fadeIn() + slideInVertically(initialOffsetY = { it / 8 })
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        // Hero Banner Card
+                StaggeredFadeIn(index = 0) {
+                    // Editorial Black & White Hero Banner Card
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(220.dp)
+                            .clip(RoundedCornerShape(26.dp))
+                    ) {
+                        Image(
+                            painter = painterResource(id = R.drawable.img_darbar_hero_1795616569708),
+                            contentDescription = "Darbar scholarly illustration",
+                            contentScale = ContentScale.Crop,
+                            colorFilter = grayscaleFilter,
+                            modifier = Modifier.fillMaxSize()
+                        )
                         Box(
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .height(220.dp)
-                                .clip(RoundedCornerShape(26.dp))
-                        ) {
-                            Image(
-                                painter = painterResource(id = R.drawable.img_darbar_hero_1795616569708),
-                                contentDescription = "Darbar scholarly illustration",
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
-                            )
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .background(
-                                        Brush.horizontalGradient(
-                                            colors = listOf(
-                                                DarbarNavyDark.copy(alpha = 0.88f),
-                                                DarbarNavyDark.copy(alpha = 0.55f),
-                                                Color.Transparent
-                                            )
+                                .fillMaxSize()
+                                .background(
+                                    Brush.horizontalGradient(
+                                        colors = listOf(
+                                            Color.Black.copy(alpha = 0.90f),
+                                            Color.Black.copy(alpha = 0.62f),
+                                            Color.Black.copy(alpha = 0.18f)
                                         )
                                     )
-                            )
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .padding(24.dp),
-                                verticalArrangement = Arrangement.Center
-                            ) {
-                                Surface(
-                                    color = DarbarGoldBright.copy(alpha = 0.2f),
-                                    shape = CircleShape
-                                ) {
-                                    Text(
-                                        text = "STUDENT STUDY HUB",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = DarbarGoldBright,
-                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
-                                    )
-                                }
-                                Spacer(modifier = Modifier.height(12.dp))
-                                Text(
-                                    text = stringResource(R.string.app_name),
-                                    style = MaterialTheme.typography.displayLarge,
-                                    color = Color.White
                                 )
-                                Text(
-                                    text = stringResource(R.string.app_tagline),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = Color.White.copy(alpha = 0.88f)
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(22.dp))
-
-                        // Feature Highlights
-                        Surface(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(22.dp),
-                            color = MaterialTheme.colorScheme.surface,
-                            tonalElevation = 2.dp
+                        )
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(24.dp),
+                            verticalArrangement = Arrangement.Center
                         ) {
-                            Column(
-                                modifier = Modifier.padding(20.dp),
-                                verticalArrangement = Arrangement.spacedBy(14.dp)
+                            Surface(
+                                color = Color.White.copy(alpha = 0.16f),
+                                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.28f)),
+                                shape = CircleShape
                             ) {
-                                AuthFeatureRow(
-                                    icon = Icons.Rounded.MenuBook,
-                                    title = "6 Dedicated Subject Libraries",
-                                    subtitle = "Bengali, English, Physics, Mathematics, Chemistry & Biology"
-                                )
-                                AuthFeatureRow(
-                                    icon = Icons.Rounded.CloudDone,
-                                    title = "Cloud Study Materials",
-                                    subtitle = "Preview PDFs & images, search live, and download anywhere"
-                                )
-                                AuthFeatureRow(
-                                    icon = Icons.Rounded.AutoAwesome,
-                                    title = "AI-Powered Daily GK Quiz",
-                                    subtitle = "10 fresh general knowledge questions every day with explanations"
+                                Text(
+                                    text = "STUDENT STUDY HUB",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color.White,
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
                                 )
                             }
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = stringResource(R.string.app_name),
+                                style = MaterialTheme.typography.displayLarge,
+                                color = Color.White
+                            )
+                            Text(
+                                text = stringResource(R.string.app_tagline),
+                                style = MaterialTheme.typography.titleMedium,
+                                color = Color.White.copy(alpha = 0.85f)
+                            )
                         }
+                    }
+                }
 
-                        Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(22.dp))
 
+                StaggeredFadeIn(index = 1) {
+                    // Feature Highlights
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(22.dp),
+                        color = MaterialTheme.colorScheme.surface,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                        tonalElevation = 0.dp
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(20.dp),
+                            verticalArrangement = Arrangement.spacedBy(14.dp)
+                        ) {
+                            AuthFeatureRow(
+                                icon = Icons.Rounded.MenuBook,
+                                iconTint = IconActionBlue,
+                                title = "6 Dedicated Subject Libraries",
+                                subtitle = "Bengali, English, Physics, Mathematics, Chemistry & Biology"
+                            )
+                            AuthFeatureRow(
+                                icon = Icons.Rounded.CloudDone,
+                                iconTint = IconSuccessEmerald,
+                                title = "Cloud Study Materials",
+                                subtitle = "Preview PDFs & images, search live, and download anywhere"
+                            )
+                            AuthFeatureRow(
+                                icon = Icons.Rounded.AutoAwesome,
+                                iconTint = IconAiViolet,
+                                title = "AI-Powered Daily GK Quiz",
+                                subtitle = "10 fresh general knowledge questions every day with explanations"
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                StaggeredFadeIn(index = 2) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         // Interactive Google Sign-In CTA
                         Button(
                             onClick = {
@@ -270,6 +286,7 @@ fun AuthScreen(
                                 )
                             },
                             enabled = !isLoading,
+                            interactionSource = signInInteraction,
                             shape = RoundedCornerShape(16.dp),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = MaterialTheme.colorScheme.primary,
@@ -278,6 +295,7 @@ fun AuthScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(56.dp)
+                                .interactiveButtonMotion(signInInteraction, enabled = !isLoading)
                                 .testTag("google_sign_in_button")
                         ) {
                             if (isLoading) {
@@ -303,13 +321,14 @@ fun AuthScreen(
                         if (!errorMessage.isNullOrBlank()) {
                             Spacer(modifier = Modifier.height(12.dp))
                             Surface(
-                                color = MaterialTheme.colorScheme.errorContainer,
+                                color = MaterialTheme.colorScheme.surface,
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
                                 shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Text(
                                     text = errorMessage.orEmpty(),
-                                    color = MaterialTheme.colorScheme.onErrorContainer,
+                                    color = MaterialTheme.colorScheme.error,
                                     style = MaterialTheme.typography.bodySmall,
                                     modifier = Modifier.padding(12.dp)
                                 )
@@ -334,6 +353,7 @@ fun AuthScreen(
 @Composable
 private fun AuthFeatureRow(
     icon: ImageVector,
+    iconTint: Color,
     title: String,
     subtitle: String
 ) {
@@ -345,13 +365,13 @@ private fun AuthFeatureRow(
             modifier = Modifier
                 .size(42.dp)
                 .clip(RoundedCornerShape(12.dp))
-                .background(MaterialTheme.colorScheme.primaryContainer),
+                .background(MaterialTheme.colorScheme.surfaceVariant),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                tint = iconTint,
                 modifier = Modifier.size(22.dp)
             )
         }

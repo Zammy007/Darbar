@@ -26,16 +26,16 @@ val DarbarTypography = Typography(
     displayLarge = TextStyle(
         fontFamily = HindSiliguriFontFamily,
         fontWeight = FontWeight.Bold,
-        fontSize = 40.sp,
-        lineHeight = 48.sp,
-        letterSpacing = (-0.5).sp
+        fontSize = 38.sp,
+        lineHeight = 46.sp,
+        letterSpacing = 0.sp
     ),
     displaySmall = TextStyle(
         fontFamily = HindSiliguriFontFamily,
         fontWeight = FontWeight.Bold,
         fontSize = 30.sp,
         lineHeight = 38.sp,
-        letterSpacing = (-0.25).sp
+        letterSpacing = 0.sp
     ),
     headlineLarge = TextStyle(
         fontFamily = HindSiliguriFontFamily,

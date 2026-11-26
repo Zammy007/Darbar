@@ -6,16 +6,21 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -31,29 +36,34 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloudUpload
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.OfflinePin
 import androidx.compose.material.icons.rounded.PictureAsPdf
+import androidx.compose.material.icons.rounded.RadioButtonUnchecked
+import androidx.compose.material.icons.rounded.SaveAlt
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SearchOff
 import androidx.compose.material.icons.rounded.Slideshow
 import androidx.compose.material.icons.rounded.TableChart
 import androidx.compose.material.icons.rounded.Visibility
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -62,7 +72,6 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -86,8 +95,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -103,13 +114,28 @@ import com.example.model.PreviewPayload
 import com.example.model.SortOrder
 import com.example.model.StudyDocument
 import com.example.model.Subject
+import com.example.model.SubjectProgress
 import com.example.model.SubjectTab
 import com.example.model.UiState
 import com.example.ui.components.DarbarFooter
+import com.example.ui.components.DarbarMotion
+import com.example.ui.components.LocalReducedMotion
+import com.example.ui.components.MotionIconButton
 import com.example.ui.components.ShimmerDocumentSkeleton
 import com.example.ui.components.StaggeredFadeIn
 import com.example.ui.components.SubjectSlidingTabBar
-import com.example.ui.components.bounceClick
+import com.example.ui.components.interactiveButtonMotion
+import com.example.ui.components.interactiveCardMotion
+import com.example.ui.theme.IconAccentPurple
+import com.example.ui.theme.IconActionBlue
+import com.example.ui.theme.IconAiViolet
+import com.example.ui.theme.IconBrandIndigo
+import com.example.ui.theme.IconDangerRose
+import com.example.ui.theme.IconNavCyan
+import com.example.ui.theme.IconProfileTeal
+import com.example.ui.theme.IconSuccessEmerald
+import com.example.ui.theme.IconUploadOrange
+import com.example.ui.theme.IconWarningAmber
 import com.example.viewmodel.UploadStatus
 import com.google.firebase.Timestamp
 import kotlinx.coroutines.Dispatchers
@@ -118,6 +144,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Locale
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -129,6 +156,9 @@ fun SubjectScreen(
     searchQuery: String,
     sortOrder: SortOrder,
     documentsState: UiState<List<StudyDocument>>,
+    subjectProgress: SubjectProgress,
+    reviewedDocumentIds: Set<String>,
+    downloadedDocumentIds: Set<String>,
     uploadStatus: UploadStatus,
     loadingDocumentId: String?,
     previewPayload: PreviewPayload?,
@@ -144,8 +174,12 @@ fun SubjectScreen(
     onResetUploadStatus: () -> Unit,
     onPreviewDocument: (StudyDocument) -> Unit,
     onDismissPreview: () -> Unit,
+    onSaveOfflineDocument: (StudyDocument) -> Unit,
     onDownloadDocument: (StudyDocument, onReady: (StudyDocument, ByteArray) -> Unit) -> Unit,
     onDeleteDocument: (StudyDocument) -> Unit,
+    onToggleReviewed: (StudyDocument) -> Unit,
+    onOpenDownloads: () -> Unit,
+    onAskAiTutor: () -> Unit,
     onPostMessage: (String) -> Unit,
     onClearMessage: () -> Unit
 ) {
@@ -227,6 +261,10 @@ fun SubjectScreen(
         }
     }
 
+    val reducedMotion = LocalReducedMotion.current
+    val density = LocalDensity.current
+    val slidePx = with(density) { DarbarMotion.SLIDE_DISTANCE_DP.toPx() }.roundToInt()
+
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -236,13 +274,14 @@ fun SubjectScreen(
                     containerColor = MaterialTheme.colorScheme.background
                 ),
                 navigationIcon = {
-                    IconButton(
+                    MotionIconButton(
                         onClick = onNavigateBack,
                         modifier = Modifier.testTag("subject_back_button")
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                            contentDescription = stringResource(R.string.back_cd)
+                            contentDescription = stringResource(R.string.back_cd),
+                            tint = IconNavCyan
                         )
                     }
                 },
@@ -255,7 +294,7 @@ fun SubjectScreen(
                             modifier = Modifier
                                 .size(36.dp)
                                 .clip(RoundedCornerShape(10.dp))
-                                .background(subject.accentColor.copy(alpha = 0.16f)),
+                                .background(MaterialTheme.colorScheme.surfaceVariant),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
@@ -281,18 +320,49 @@ fun SubjectScreen(
                     }
                 },
                 actions = {
-                    AnimatedVisibility(visible = isUploadUnlocked) {
+                    MotionIconButton(
+                        onClick = onOpenDownloads,
+                        modifier = Modifier.testTag("subject_downloads_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.DownloadDone,
+                            contentDescription = stringResource(R.string.downloads_open_cd),
+                            tint = IconSuccessEmerald
+                        )
+                    }
+                    MotionIconButton(
+                        onClick = onAskAiTutor,
+                        modifier = Modifier.testTag("subject_ask_ai_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.AutoAwesome,
+                            contentDescription = stringResource(R.string.ask_ai_tutor_cd),
+                            tint = IconAiViolet
+                        )
+                    }
+                    val fastMs = DarbarMotion.duration(DarbarMotion.FAST_MS, reducedMotion)
+                    AnimatedVisibility(
+                        visible = isUploadUnlocked,
+                        enter = fadeIn(tween(fastMs, easing = DarbarMotion.EaseOut)) +
+                            scaleIn(initialScale = if (reducedMotion) 1f else 0.9f, animationSpec = tween(fastMs, easing = DarbarMotion.EaseOut)),
+                        exit = fadeOut(tween(fastMs, easing = DarbarMotion.EaseOut)) +
+                            scaleOut(targetScale = if (reducedMotion) 1f else 0.9f, animationSpec = tween(fastMs, easing = DarbarMotion.EaseOut))
+                    ) {
+                        val lockInteraction = remember { MutableInteractionSource() }
                         FilledTonalButton(
                             onClick = onLockUploads,
+                            interactionSource = lockInteraction,
                             shape = RoundedCornerShape(12.dp),
                             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                             modifier = Modifier
                                 .padding(end = 8.dp)
+                                .interactiveButtonMotion(lockInteraction)
                                 .testTag("lock_uploads_button")
                         ) {
                             Icon(
                                 imageVector = Icons.Rounded.Lock,
                                 contentDescription = null,
+                                tint = IconWarningAmber,
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
@@ -320,7 +390,7 @@ fun SubjectScreen(
             ) {
                 Spacer(modifier = Modifier.height(6.dp))
 
-                // Separate VIEW and UPLOAD buttons with animated sliding indicator
+                // Separate VIEW and UPLOAD buttons with monochrome animated sliding indicator + colored icons
                 SubjectSlidingTabBar(
                     activeTab = activeTab,
                     isUploadUnlocked = isUploadUnlocked,
@@ -343,11 +413,19 @@ fun SubjectScreen(
                     modifier = Modifier.weight(1f),
                     transitionSpec = {
                         val direction = if (targetState == SubjectTab.UPLOAD) 1 else -1
-                        (fadeIn(tween(240)) + slideInHorizontally(tween(260)) { width ->
-                            direction * (width / 6)
-                        }) togetherWith (fadeOut(tween(180)) + slideOutHorizontally(tween(220)) { width ->
-                            -direction * (width / 6)
-                        })
+                        val enterMs = DarbarMotion.duration(DarbarMotion.MEDIUM_MS, reducedMotion)
+                        val exitMs = DarbarMotion.duration(DarbarMotion.MODAL_EXIT_MS, reducedMotion)
+                        if (reducedMotion) {
+                            fadeIn(tween(0)) togetherWith fadeOut(tween(0))
+                        } else {
+                            (fadeIn(tween(enterMs, easing = DarbarMotion.EaseOut)) +
+                                slideInHorizontally(tween(enterMs, easing = DarbarMotion.EaseOut)) {
+                                    direction * slidePx
+                                }) togetherWith (fadeOut(tween(exitMs, easing = DarbarMotion.EaseOut)) +
+                                slideOutHorizontally(tween(exitMs, easing = DarbarMotion.EaseOut)) {
+                                    -direction * slidePx
+                                })
+                        }
                     },
                     label = "subject_tab_content"
                 ) { tab ->
@@ -358,16 +436,22 @@ fun SubjectScreen(
                             searchQuery = searchQuery,
                             sortOrder = sortOrder,
                             documentsState = documentsState,
+                            subjectProgress = subjectProgress,
+                            reviewedDocumentIds = reviewedDocumentIds,
+                            downloadedDocumentIds = downloadedDocumentIds,
                             loadingDocumentId = loadingDocumentId,
                             onSearchQueryChange = onSearchQueryChange,
                             onSortOrderChange = onSortOrderChange,
                             onPreviewClick = onPreviewDocument,
-                            onDownloadClick = { doc ->
+                            onSaveOfflineClick = onSaveOfflineDocument,
+                            onOpenDownloads = onOpenDownloads,
+                            onExportCopyClick = { doc ->
                                 onDownloadDocument(doc) { fetchedDoc, bytes ->
                                     triggerSaveOrOpen(fetchedDoc, bytes)
                                 }
                             },
-                            onDeleteClick = { doc -> docPendingDelete = doc }
+                            onDeleteClick = { doc -> docPendingDelete = doc },
+                            onToggleReviewed = onToggleReviewed
                         )
 
                         SubjectTab.UPLOAD -> SubjectUploadSection(
@@ -404,31 +488,20 @@ fun SubjectScreen(
         )
     }
 
-    // Delete Confirmation Dialog for uploader's own documents
+    // Delete Confirmation Dialog for uploader's own documents (scale + fade enter & exit)
     val deleteTarget = docPendingDelete
     if (deleteTarget != null) {
-        AlertDialog(
-            onDismissRequest = { docPendingDelete = null },
-            title = { Text("Delete document?") },
-            text = {
-                Text("Remove \"${deleteTarget.title}\" permanently from ${subject.titleEn}? All students will no longer see it.")
+        AnimatedConfirmDialog(
+            title = "Delete document?",
+            message = "Remove \"${deleteTarget.title}\" permanently from ${subject.titleEn}? All students will no longer see it.",
+            confirmLabel = "Delete",
+            dismissLabel = "Cancel",
+            isDestructive = true,
+            onConfirm = {
+                onDeleteDocument(deleteTarget)
+                docPendingDelete = null
             },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        onDeleteDocument(deleteTarget)
-                        docPendingDelete = null
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                ) {
-                    Text("Delete")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { docPendingDelete = null }) {
-                    Text("Cancel")
-                }
-            }
+            onDismiss = { docPendingDelete = null }
         )
     }
 }
@@ -440,14 +513,115 @@ private fun SubjectViewSection(
     searchQuery: String,
     sortOrder: SortOrder,
     documentsState: UiState<List<StudyDocument>>,
+    subjectProgress: SubjectProgress,
+    reviewedDocumentIds: Set<String>,
+    downloadedDocumentIds: Set<String>,
     loadingDocumentId: String?,
     onSearchQueryChange: (String) -> Unit,
     onSortOrderChange: (SortOrder) -> Unit,
     onPreviewClick: (StudyDocument) -> Unit,
-    onDownloadClick: (StudyDocument) -> Unit,
-    onDeleteClick: (StudyDocument) -> Unit
+    onSaveOfflineClick: (StudyDocument) -> Unit,
+    onOpenDownloads: () -> Unit,
+    onExportCopyClick: (StudyDocument) -> Unit,
+    onDeleteClick: (StudyDocument) -> Unit,
+    onToggleReviewed: (StudyDocument) -> Unit
 ) {
+    val reducedMotion = LocalReducedMotion.current
+    val animatedSubjectProgress by animateFloatAsState(
+        targetValue = subjectProgress.fraction,
+        animationSpec = tween(
+            durationMillis = DarbarMotion.duration(DarbarMotion.PAGE_MS, reducedMotion),
+            easing = DarbarMotion.EaseOut
+        ),
+        label = "subject_banner_progress"
+    )
+
     Column(modifier = Modifier.fillMaxSize()) {
+        // Per-Subject Visual Progress Banner (Monochrome + Colored Icon)
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("subject_progress_banner")
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(7.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (subjectProgress.isComplete) {
+                                Icons.Rounded.CheckCircle
+                            } else {
+                                subject.icon
+                            },
+                            contentDescription = null,
+                            tint = if (subjectProgress.isComplete) IconSuccessEmerald else subject.accentColor,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = if (subjectProgress.totalCount == 0) {
+                                "No study materials uploaded yet"
+                            } else {
+                                "${subjectProgress.reviewedCount} of ${subjectProgress.totalCount} materials reviewed"
+                            },
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                    Surface(
+                        color = if (subjectProgress.isComplete) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.surfaceVariant
+                        },
+                        shape = CircleShape
+                    ) {
+                        Text(
+                            text = if (subjectProgress.isComplete) {
+                                stringResource(R.string.all_reviewed_label)
+                            } else {
+                                "${subjectProgress.percent}%"
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = if (subjectProgress.isComplete) {
+                                MaterialTheme.colorScheme.onPrimary
+                            } else {
+                                MaterialTheme.colorScheme.onSurface
+                            },
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+                LinearProgressIndicator(
+                    progress = { animatedSubjectProgress },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(6.dp)
+                        .clip(CircleShape),
+                    color = MaterialTheme.colorScheme.primary,
+                    trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                    strokeCap = StrokeCap.Round
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
         // Dedicated Per-Subject Live Search Bar
         OutlinedTextField(
             value = searchQuery,
@@ -463,18 +637,24 @@ private fun SubjectViewSection(
                 Icon(
                     imageVector = Icons.Rounded.Search,
                     contentDescription = "Search ${subject.titleEn} documents",
-                    tint = subject.accentColor
+                    tint = IconActionBlue
                 )
             },
             trailingIcon = {
-                if (searchQuery.isNotEmpty()) {
-                    IconButton(
+                val fastMs = DarbarMotion.duration(DarbarMotion.FAST_MS, reducedMotion)
+                AnimatedVisibility(
+                    visible = searchQuery.isNotEmpty(),
+                    enter = fadeIn(tween(fastMs, easing = DarbarMotion.EaseOut)) + scaleIn(initialScale = 0.85f, animationSpec = tween(fastMs, easing = DarbarMotion.EaseOut)),
+                    exit = fadeOut(tween(fastMs, easing = DarbarMotion.EaseOut)) + scaleOut(targetScale = 0.85f, animationSpec = tween(fastMs, easing = DarbarMotion.EaseOut))
+                ) {
+                    MotionIconButton(
                         onClick = { onSearchQueryChange("") },
                         modifier = Modifier.testTag("clear_search_button")
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.Close,
-                            contentDescription = "Clear search"
+                            contentDescription = "Clear search",
+                            tint = IconDangerRose
                         )
                     }
                 }
@@ -488,7 +668,7 @@ private fun SubjectViewSection(
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // Sort Option Chips: Newest first, Oldest first, A to Z
+        // Sort Option Chips: Newest first, Oldest first, A to Z (Monochrome)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -503,8 +683,8 @@ private fun SubjectViewSection(
                     onClick = { onSortOrderChange(order) },
                     label = { Text(order.label, style = MaterialTheme.typography.labelMedium) },
                     colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = subject.accentColor.copy(alpha = 0.16f),
-                        selectedLabelColor = subject.accentColor
+                        selectedContainerColor = MaterialTheme.colorScheme.primary,
+                        selectedLabelColor = MaterialTheme.colorScheme.onPrimary
                     ),
                     modifier = Modifier.testTag("sort_chip_${order.name.lowercase()}")
                 )
@@ -513,148 +693,197 @@ private fun SubjectViewSection(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Document List States
-        when (documentsState) {
-            is UiState.Loading -> {
-                LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    contentPadding = PaddingValues(bottom = 24.dp),
-                    modifier = Modifier.fillMaxSize()
-                ) {
-                    items(4) {
-                        ShimmerDocumentSkeleton()
-                    }
+        // Document List States with smooth shimmer-to-content fade transition
+        AnimatedContent(
+            targetState = documentsState,
+            contentKey = { state ->
+                when (state) {
+                    is UiState.Loading -> "loading"
+                    is UiState.Error -> "error"
+                    is UiState.Success -> if (state.data.isEmpty()) "empty" else "list"
                 }
-            }
-
-            is UiState.Error -> {
-                Surface(
-                    shape = RoundedCornerShape(20.dp),
-                    color = MaterialTheme.colorScheme.errorContainer,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 12.dp)
-                ) {
-                    Column(
-                        modifier = Modifier.padding(20.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+            },
+            transitionSpec = {
+                val enterMs = DarbarMotion.duration(DarbarMotion.MEDIUM_MS, reducedMotion)
+                val exitMs = DarbarMotion.duration(DarbarMotion.FAST_MS, reducedMotion)
+                fadeIn(tween(enterMs, easing = DarbarMotion.EaseOut)) togetherWith
+                    fadeOut(tween(exitMs, easing = DarbarMotion.EaseOut))
+            },
+            modifier = Modifier.weight(1f),
+            label = "documents_state_fade"
+        ) { state ->
+            when (state) {
+                is UiState.Loading -> {
+                    LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        contentPadding = PaddingValues(bottom = 24.dp),
+                        modifier = Modifier.fillMaxSize()
                     ) {
-                        Icon(
-                            imageVector = Icons.Rounded.ErrorOutline,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onErrorContainer,
-                            modifier = Modifier.size(32.dp)
-                        )
-                        Text(
-                            text = "Could not load ${subject.titleEn} documents",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onErrorContainer
-                        )
-                        Text(
-                            text = documentsState.message,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onErrorContainer
-                        )
+                        items(4) {
+                            ShimmerDocumentSkeleton()
+                        }
                     }
                 }
-            }
 
-            is UiState.Success -> {
-                val docs = documentsState.data
-                if (docs.isEmpty()) {
-                    Column(
+                is UiState.Error -> {
+                    Surface(
+                        shape = RoundedCornerShape(20.dp),
+                        color = MaterialTheme.colorScheme.surface,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
                         modifier = Modifier
-                            .fillMaxSize()
-                            .verticalScroll(rememberScrollState()),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
+                            .fillMaxWidth()
+                            .padding(vertical = 12.dp)
                     ) {
-                        Surface(
-                            shape = RoundedCornerShape(22.dp),
-                            color = MaterialTheme.colorScheme.surface,
-                            tonalElevation = 1.dp,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 16.dp)
+                        Column(
+                            modifier = Modifier.padding(20.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Column(
-                                modifier = Modifier.padding(28.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                            Icon(
+                                imageVector = Icons.Rounded.ErrorOutline,
+                                contentDescription = null,
+                                tint = IconDangerRose,
+                                modifier = Modifier.size(32.dp)
+                            )
+                            Text(
+                                text = "Could not load ${subject.titleEn} documents",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = state.message,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+
+                is UiState.Success -> {
+                    val docs = state.data
+                    if (docs.isEmpty()) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .verticalScroll(rememberScrollState()),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(22.dp),
+                                color = MaterialTheme.colorScheme.surface,
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                                tonalElevation = 0.dp,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 16.dp)
                             ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(58.dp)
-                                        .clip(CircleShape)
-                                        .background(subject.accentColor.copy(alpha = 0.14f)),
-                                    contentAlignment = Alignment.Center
+                                Column(
+                                    modifier = Modifier.padding(28.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(10.dp)
                                 ) {
-                                    Icon(
-                                        imageVector = if (searchQuery.isNotBlank()) {
-                                            Icons.Rounded.SearchOff
-                                        } else {
-                                            Icons.Rounded.FolderOpen
-                                        },
-                                        contentDescription = null,
-                                        tint = subject.accentColor,
-                                        modifier = Modifier.size(30.dp)
-                                    )
-                                }
-                                Text(
-                                    text = if (searchQuery.isNotBlank()) {
-                                        "No matching notes found"
-                                    } else {
-                                        "No ${subject.titleEn} documents yet"
-                                    },
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Text(
-                                    text = if (searchQuery.isNotBlank()) {
-                                        "Nothing in ${subject.titleEn} matched \"$searchQuery\". Try a different keyword."
-                                    } else {
-                                        "Study materials uploaded for ${subject.titleEn} will appear here immediately for all students."
-                                    },
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                if (searchQuery.isNotBlank()) {
-                                    FilledTonalButton(
-                                        onClick = { onSearchQueryChange("") },
-                                        shape = RoundedCornerShape(12.dp)
+                                    Box(
+                                        modifier = Modifier
+                                            .size(58.dp)
+                                            .clip(CircleShape)
+                                            .background(MaterialTheme.colorScheme.surfaceVariant),
+                                        contentAlignment = Alignment.Center
                                     ) {
-                                        Text("Clear search")
+                                        Icon(
+                                            imageVector = if (searchQuery.isNotBlank()) {
+                                                Icons.Rounded.SearchOff
+                                            } else {
+                                                Icons.Rounded.FolderOpen
+                                            },
+                                            contentDescription = null,
+                                            tint = if (searchQuery.isNotBlank()) IconActionBlue else IconUploadOrange,
+                                            modifier = Modifier.size(30.dp)
+                                        )
+                                    }
+                                    Text(
+                                        text = if (searchQuery.isNotBlank()) {
+                                            "No matching notes found"
+                                        } else {
+                                            "No ${subject.titleEn} documents yet"
+                                        },
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = if (searchQuery.isNotBlank()) {
+                                            "Nothing in ${subject.titleEn} matched \"$searchQuery\". Try a different keyword."
+                                        } else {
+                                            "Study materials uploaded for ${subject.titleEn} will appear here immediately for all students."
+                                        },
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    if (searchQuery.isNotBlank()) {
+                                        val clearBtnInteraction = remember { MutableInteractionSource() }
+                                        FilledTonalButton(
+                                            onClick = { onSearchQueryChange("") },
+                                            interactionSource = clearBtnInteraction,
+                                            shape = RoundedCornerShape(12.dp),
+                                            modifier = Modifier.interactiveButtonMotion(clearBtnInteraction)
+                                        ) {
+                                            Text("Clear search")
+                                        }
                                     }
                                 }
                             }
+                            DarbarFooter()
                         }
-                        DarbarFooter()
-                    }
-                } else {
-                    LazyColumn(
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                        contentPadding = PaddingValues(top = 4.dp, bottom = 24.dp),
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        itemsIndexed(
-                            items = docs,
-                            key = { _, doc -> doc.id }
-                        ) { index, doc ->
-                            StaggeredFadeIn(index = index) {
-                                StudyDocumentCard(
-                                    document = doc,
-                                    accentColor = subject.accentColor,
-                                    isBusy = loadingDocumentId == doc.id,
-                                    isOwner = doc.uploaderId == currentUserId,
-                                    onPreviewClick = { onPreviewClick(doc) },
-                                    onDownloadClick = { onDownloadClick(doc) },
-                                    onDeleteClick = { onDeleteClick(doc) }
-                                )
+                    } else {
+                        val listState = rememberLazyListState()
+                        LaunchedEffect(sortOrder) {
+                            if (docs.isNotEmpty()) {
+                                if (reducedMotion) {
+                                    listState.scrollToItem(0)
+                                } else {
+                                    listState.animateScrollToItem(0)
+                                }
                             }
                         }
-                        item {
-                            DarbarFooter()
+                        val itemAnimMs = DarbarMotion.duration(DarbarMotion.MEDIUM_MS, reducedMotion)
+                        val itemExitMs = DarbarMotion.duration(DarbarMotion.FAST_MS, reducedMotion)
+
+                        LazyColumn(
+                            state = listState,
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                            contentPadding = PaddingValues(top = 4.dp, bottom = 24.dp),
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            itemsIndexed(
+                                items = docs,
+                                key = { _, doc -> doc.id }
+                            ) { index, doc ->
+                                StaggeredFadeIn(
+                                    index = index,
+                                    modifier = Modifier.animateItem(
+                                        fadeInSpec = tween(itemAnimMs, easing = DarbarMotion.EaseOut),
+                                        placementSpec = tween(itemAnimMs, easing = DarbarMotion.EaseOut),
+                                        fadeOutSpec = tween(itemExitMs, easing = DarbarMotion.EaseOut)
+                                    )
+                                ) {
+                                    StudyDocumentCard(
+                                        document = doc,
+                                        isReviewed = doc.id in reviewedDocumentIds,
+                                        isDownloaded = doc.id in downloadedDocumentIds,
+                                        isBusy = loadingDocumentId == doc.id,
+                                        isOwner = doc.uploaderId == currentUserId,
+                                        onToggleReviewed = { onToggleReviewed(doc) },
+                                        onPreviewClick = { onPreviewClick(doc) },
+                                        onSaveOfflineClick = { onSaveOfflineClick(doc) },
+                                        onOpenDownloads = onOpenDownloads,
+                                        onExportCopyClick = { onExportCopyClick(doc) },
+                                        onDeleteClick = { onDeleteClick(doc) }
+                                    )
+                                }
+                            }
+                            item(key = "footer") {
+                                DarbarFooter()
+                            }
                         }
                     }
                 }
@@ -666,13 +895,18 @@ private fun SubjectViewSection(
 @Composable
 private fun StudyDocumentCard(
     document: StudyDocument,
-    accentColor: Color,
+    isReviewed: Boolean,
+    isDownloaded: Boolean,
     isBusy: Boolean,
     isOwner: Boolean,
+    onToggleReviewed: () -> Unit,
     onPreviewClick: () -> Unit,
-    onDownloadClick: () -> Unit,
+    onSaveOfflineClick: () -> Unit,
+    onOpenDownloads: () -> Unit,
+    onExportCopyClick: () -> Unit,
     onDeleteClick: () -> Unit
 ) {
+    val reducedMotion = LocalReducedMotion.current
     val fileVisual = remember(document.fileExtension) { fileTypeVisual(document.fileExtension) }
     val dateLabel = remember(document.createdAt, document.updatedAt) {
         val ts = document.createdAt ?: document.updatedAt ?: Timestamp.now()
@@ -682,14 +916,43 @@ private fun StudyDocumentCard(
         DocumentRepository.formatFileSize(document.fileSizeBytes)
     }
 
+    val badgeBgColor by animateColorAsState(
+        targetValue = if (isReviewed) {
+            MaterialTheme.colorScheme.primary
+        } else {
+            MaterialTheme.colorScheme.surfaceVariant
+        },
+        animationSpec = tween(DarbarMotion.duration(DarbarMotion.FAST_MS, reducedMotion), easing = DarbarMotion.EaseOut),
+        label = "reviewed_pill_bg"
+    )
+    val badgeTextColor by animateColorAsState(
+        targetValue = if (isReviewed) {
+            MaterialTheme.colorScheme.onPrimary
+        } else {
+            MaterialTheme.colorScheme.onSurface
+        },
+        animationSpec = tween(DarbarMotion.duration(DarbarMotion.FAST_MS, reducedMotion), easing = DarbarMotion.EaseOut),
+        label = "reviewed_pill_text"
+    )
+    val cardBorderColor by animateColorAsState(
+        targetValue = if (isReviewed) {
+            MaterialTheme.colorScheme.primary
+        } else {
+            MaterialTheme.colorScheme.outlineVariant
+        },
+        animationSpec = tween(DarbarMotion.duration(DarbarMotion.FAST_MS, reducedMotion), easing = DarbarMotion.EaseOut),
+        label = "reviewed_card_border"
+    )
+
     Surface(
         modifier = Modifier
             .fillMaxWidth()
+            .interactiveCardMotion(shape = RoundedCornerShape(20.dp))
             .testTag("document_card_${document.id}"),
         shape = RoundedCornerShape(20.dp),
         color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        tonalElevation = 1.dp
+        border = BorderStroke(1.dp, cardBorderColor),
+        tonalElevation = 0.dp
     ) {
         Column(
             modifier = Modifier
@@ -705,7 +968,7 @@ private fun StudyDocumentCard(
                     modifier = Modifier
                         .size(48.dp)
                         .clip(RoundedCornerShape(14.dp))
-                        .background(fileVisual.color.copy(alpha = 0.14f)),
+                        .background(MaterialTheme.colorScheme.surfaceVariant),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
@@ -722,14 +985,14 @@ private fun StudyDocumentCard(
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Surface(
-                            color = fileVisual.color.copy(alpha = 0.14f),
+                            color = MaterialTheme.colorScheme.surfaceVariant,
                             shape = RoundedCornerShape(6.dp)
                         ) {
                             Text(
                                 text = fileVisual.badge,
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
-                                color = fileVisual.color,
+                                color = MaterialTheme.colorScheme.onSurface,
                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                             )
                         }
@@ -760,7 +1023,7 @@ private fun StudyDocumentCard(
                 }
 
                 if (isOwner) {
-                    IconButton(
+                    MotionIconButton(
                         onClick = onDeleteClick,
                         enabled = !isBusy,
                         modifier = Modifier.testTag("delete_doc_${document.id}")
@@ -768,8 +1031,90 @@ private fun StudyDocumentCard(
                         Icon(
                             imageVector = Icons.Rounded.DeleteOutline,
                             contentDescription = "Delete document",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            tint = IconDangerRose
                         )
+                    }
+                }
+            }
+
+            // Interactive Reviewed Status Pill + Saved Offline Pill (Monochrome + Colored Icons)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                val reviewInteraction = remember { MutableInteractionSource() }
+                Surface(
+                    onClick = onToggleReviewed,
+                    interactionSource = reviewInteraction,
+                    shape = CircleShape,
+                    color = badgeBgColor,
+                    border = BorderStroke(
+                        width = 1.dp,
+                        color = if (isReviewed) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
+                    ),
+                    modifier = Modifier
+                        .interactiveButtonMotion(reviewInteraction)
+                        .testTag("toggle_reviewed_${document.id}")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (isReviewed) {
+                                Icons.Rounded.CheckCircle
+                            } else {
+                                Icons.Rounded.RadioButtonUnchecked
+                            },
+                            contentDescription = null,
+                            tint = if (isReviewed) IconSuccessEmerald else IconAccentPurple,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = if (isReviewed) {
+                                stringResource(R.string.reviewed_label)
+                            } else {
+                                stringResource(R.string.mark_reviewed)
+                            },
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = badgeTextColor
+                        )
+                    }
+                }
+
+                if (isDownloaded) {
+                    val offlineChipInteraction = remember { MutableInteractionSource() }
+                    Surface(
+                        onClick = onOpenDownloads,
+                        interactionSource = offlineChipInteraction,
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                        modifier = Modifier
+                            .interactiveButtonMotion(offlineChipInteraction)
+                            .testTag("offline_badge_${document.id}")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(5.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.OfflinePin,
+                                contentDescription = null,
+                                tint = IconSuccessEmerald,
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Text(
+                                text = stringResource(R.string.saved_offline_label),
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
                     }
                 }
             }
@@ -780,13 +1125,16 @@ private fun StudyDocumentCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 if (document.canPreview()) {
+                    val previewInteraction = remember { MutableInteractionSource() }
                     OutlinedButton(
                         onClick = onPreviewClick,
                         enabled = !isBusy,
+                        interactionSource = previewInteraction,
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier
                             .weight(1f)
                             .height(44.dp)
+                            .interactiveButtonMotion(previewInteraction, enabled = !isBusy)
                             .testTag("preview_doc_${document.id}")
                     ) {
                         if (isBusy) {
@@ -798,6 +1146,7 @@ private fun StudyDocumentCard(
                             Icon(
                                 imageVector = Icons.Rounded.Visibility,
                                 contentDescription = null,
+                                tint = IconActionBlue,
                                 modifier = Modifier.size(18.dp)
                             )
                             Spacer(modifier = Modifier.width(6.dp))
@@ -806,34 +1155,66 @@ private fun StudyDocumentCard(
                     }
                 }
 
+                val downloadInteraction = remember { MutableInteractionSource() }
                 Button(
-                    onClick = onDownloadClick,
+                    onClick = {
+                        if (isDownloaded) {
+                            onOpenDownloads()
+                        } else {
+                            onSaveOfflineClick()
+                        }
+                    },
                     enabled = !isBusy,
+                    interactionSource = downloadInteraction,
                     shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = accentColor),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    ),
                     modifier = Modifier
                         .weight(1f)
                         .height(44.dp)
+                        .interactiveButtonMotion(downloadInteraction, enabled = !isBusy)
                         .testTag("download_doc_${document.id}")
                 ) {
                     if (isBusy) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(16.dp),
-                            color = Color.White,
+                            color = MaterialTheme.colorScheme.onPrimary,
                             strokeWidth = 2.dp
                         )
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Loading…", color = Color.White)
+                        Text("Saving…")
                     } else {
                         Icon(
-                            imageVector = Icons.Rounded.Download,
+                            imageVector = if (isDownloaded) Icons.Rounded.DownloadDone else Icons.Rounded.Download,
                             contentDescription = null,
-                            tint = Color.White,
+                            tint = if (isDownloaded) IconSuccessEmerald else IconProfileTeal,
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text(stringResource(R.string.download_button), color = Color.White)
+                        Text(
+                            text = if (isDownloaded) {
+                                stringResource(R.string.downloads_title)
+                            } else {
+                                stringResource(R.string.download_button)
+                            },
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
+                }
+
+                MotionIconButton(
+                    onClick = onExportCopyClick,
+                    enabled = !isBusy,
+                    modifier = Modifier.testTag("export_doc_${document.id}")
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.SaveAlt,
+                        contentDescription = stringResource(R.string.save_copy_button),
+                        tint = IconActionBlue
+                    )
                 }
             }
         }
@@ -889,6 +1270,11 @@ private fun SubjectUploadSection(
     }
 
     val isUploading = uploadStatus is UploadStatus.Uploading
+    val reducedMotion = LocalReducedMotion.current
+    val density = LocalDensity.current
+    val slidePx = with(density) { DarbarMotion.SLIDE_DISTANCE_DP.toPx() }.roundToInt()
+    val bannerEnterMs = DarbarMotion.duration(DarbarMotion.MEDIUM_MS, reducedMotion)
+    val bannerExitMs = DarbarMotion.duration(DarbarMotion.FAST_MS, reducedMotion)
 
     Column(
         modifier = Modifier
@@ -896,10 +1282,11 @@ private fun SubjectUploadSection(
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        // Unlocked Session Banner
+        // Unlocked Session Banner (Monochrome)
         Surface(
             shape = RoundedCornerShape(16.dp),
-            color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f),
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
             modifier = Modifier.fillMaxWidth()
         ) {
             Row(
@@ -913,21 +1300,26 @@ private fun SubjectUploadSection(
                     Text(
                         text = "Upload Unlocked (This Session)",
                         style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
                         text = "Files uploaded here appear in ${subject.titleEn} for all students.",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.85f)
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+                val sectionLockInteraction = remember { MutableInteractionSource() }
                 TextButton(
                     onClick = onLockUploads,
-                    modifier = Modifier.testTag("upload_section_lock_button")
+                    interactionSource = sectionLockInteraction,
+                    modifier = Modifier
+                        .interactiveButtonMotion(sectionLockInteraction)
+                        .testTag("upload_section_lock_button")
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.Lock,
                         contentDescription = null,
+                        tint = IconWarningAmber,
                         modifier = Modifier.size(16.dp)
                     )
                     Spacer(modifier = Modifier.width(4.dp))
@@ -936,13 +1328,18 @@ private fun SubjectUploadSection(
             }
         }
 
-        // Success Feedback Card
-        AnimatedVisibility(visible = uploadStatus is UploadStatus.Success) {
+        // Success Feedback Card (GPU transform + opacity only)
+        AnimatedVisibility(
+            visible = uploadStatus is UploadStatus.Success,
+            enter = fadeIn(tween(bannerEnterMs, easing = DarbarMotion.EaseOut)) +
+                slideInVertically(tween(bannerEnterMs, easing = DarbarMotion.EaseOut)) { if (reducedMotion) 0 else -slidePx },
+            exit = fadeOut(tween(bannerExitMs, easing = DarbarMotion.EaseOut))
+        ) {
             val uploadedTitle = (uploadStatus as? UploadStatus.Success)?.title.orEmpty()
             Surface(
                 shape = RoundedCornerShape(18.dp),
-                color = Color(0xFF15803D).copy(alpha = 0.14f),
-                border = BorderStroke(1.dp, Color(0xFF15803D).copy(alpha = 0.35f)),
+                color = MaterialTheme.colorScheme.surface,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary),
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("upload_success_banner")
@@ -958,7 +1355,7 @@ private fun SubjectUploadSection(
                         Icon(
                             imageVector = Icons.Rounded.CheckCircle,
                             contentDescription = null,
-                            tint = Color(0xFF15803D)
+                            tint = IconSuccessEmerald
                         )
                         Column {
                             Text(
@@ -974,12 +1371,16 @@ private fun SubjectUploadSection(
                         }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        val viewDocsInteraction = remember { MutableInteractionSource() }
                         FilledTonalButton(
                             onClick = onGoToView,
-                            shape = RoundedCornerShape(12.dp)
+                            interactionSource = viewDocsInteraction,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.interactiveButtonMotion(viewDocsInteraction)
                         ) {
                             Text("View Documents")
                         }
+                        val anotherInteraction = remember { MutableInteractionSource() }
                         OutlinedButton(
                             onClick = {
                                 pickedFile = null
@@ -987,7 +1388,9 @@ private fun SubjectUploadSection(
                                 description = ""
                                 onResetStatus()
                             },
-                            shape = RoundedCornerShape(12.dp)
+                            interactionSource = anotherInteraction,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.interactiveButtonMotion(anotherInteraction)
                         ) {
                             Text("Upload Another")
                         }
@@ -996,13 +1399,15 @@ private fun SubjectUploadSection(
             }
         }
 
-        // File Picker Drop Zone Card
+        // File Picker Drop Zone Card (Monochrome + Colored Upload Icon)
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
                 .testTag("pick_file_button")
-                .clip(RoundedCornerShape(20.dp))
-                .bounceClick(enabled = !isUploading) {
+                .interactiveCardMotion(
+                    enabled = !isUploading,
+                    shape = RoundedCornerShape(20.dp)
+                ) {
                     documentPickerLauncher.launch(
                         arrayOf(
                             "application/pdf",
@@ -1024,7 +1429,7 @@ private fun SubjectUploadSection(
             color = MaterialTheme.colorScheme.surface,
             border = BorderStroke(
                 width = 1.5.dp,
-                color = if (pickedFile != null) subject.accentColor else MaterialTheme.colorScheme.outline
+                color = if (pickedFile != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
             )
         ) {
             Column(
@@ -1038,13 +1443,13 @@ private fun SubjectUploadSection(
                     modifier = Modifier
                         .size(54.dp)
                         .clip(CircleShape)
-                        .background(subject.accentColor.copy(alpha = 0.14f)),
+                        .background(MaterialTheme.colorScheme.surfaceVariant),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.CloudUpload,
                         contentDescription = "Choose study document",
-                        tint = subject.accentColor,
+                        tint = IconUploadOrange,
                         modifier = Modifier.size(28.dp)
                     )
                 }
@@ -1064,7 +1469,8 @@ private fun SubjectUploadSection(
                     Text(
                         text = pickedFile!!.fileName,
                         style = MaterialTheme.typography.titleSmall,
-                        color = subject.accentColor,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -1081,14 +1487,15 @@ private fun SubjectUploadSection(
 
         if (!fileValidationError.isNullOrBlank()) {
             Surface(
-                color = MaterialTheme.colorScheme.errorContainer,
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
                     text = fileValidationError.orEmpty(),
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onErrorContainer,
+                    color = MaterialTheme.colorScheme.error,
                     modifier = Modifier.padding(12.dp)
                 )
             }
@@ -1125,13 +1532,24 @@ private fun SubjectUploadSection(
                 .testTag("upload_description_input")
         )
 
-        // Upload Progress Bar
-        AnimatedVisibility(visible = uploadStatus is UploadStatus.Uploading) {
-            val progress = (uploadStatus as? UploadStatus.Uploading)?.progress ?: 0f
+        // Upload Progress Bar (GPU transform + opacity only)
+        AnimatedVisibility(
+            visible = uploadStatus is UploadStatus.Uploading,
+            enter = fadeIn(tween(bannerEnterMs, easing = DarbarMotion.EaseOut)) +
+                slideInVertically(tween(bannerEnterMs, easing = DarbarMotion.EaseOut)) { if (reducedMotion) 0 else slidePx / 2 },
+            exit = fadeOut(tween(bannerExitMs, easing = DarbarMotion.EaseOut))
+        ) {
+            val rawProgress = (uploadStatus as? UploadStatus.Uploading)?.progress ?: 0f
+            val smoothProgress by animateFloatAsState(
+                targetValue = rawProgress,
+                animationSpec = tween(DarbarMotion.duration(DarbarMotion.FAST_MS, reducedMotion), easing = DarbarMotion.EaseOut),
+                label = "upload_progress"
+            )
             Surface(
                 shape = RoundedCornerShape(16.dp),
                 color = MaterialTheme.colorScheme.surface,
-                tonalElevation = 1.dp,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                tonalElevation = 0.dp,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
@@ -1147,14 +1565,15 @@ private fun SubjectUploadSection(
                             style = MaterialTheme.typography.labelLarge
                         )
                         Text(
-                            text = "${(progress * 100).toInt()}%",
+                            text = "${(rawProgress * 100).toInt()}%",
                             style = MaterialTheme.typography.labelLarge,
-                            color = subject.accentColor
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                     }
                     LinearProgressIndicator(
-                        progress = { progress },
-                        color = subject.accentColor,
+                        progress = { smoothProgress },
+                        color = MaterialTheme.colorScheme.primary,
+                        trackColor = MaterialTheme.colorScheme.surfaceVariant,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(8.dp)
@@ -1165,22 +1584,30 @@ private fun SubjectUploadSection(
         }
 
         // Upload Error Message
-        if (uploadStatus is UploadStatus.Error) {
+        AnimatedVisibility(
+            visible = uploadStatus is UploadStatus.Error,
+            enter = fadeIn(tween(bannerEnterMs, easing = DarbarMotion.EaseOut)),
+            exit = fadeOut(tween(bannerExitMs, easing = DarbarMotion.EaseOut))
+        ) {
+            val errorMsg = (uploadStatus as? UploadStatus.Error)?.message.orEmpty()
             Surface(
-                color = MaterialTheme.colorScheme.errorContainer,
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
-                    text = uploadStatus.message,
+                    text = errorMsg,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onErrorContainer,
+                    color = MaterialTheme.colorScheme.error,
                     modifier = Modifier.padding(12.dp)
                 )
             }
         }
 
-        // Submit Button
+        // Submit Button (Monochrome + Colored Upload Icon)
+        val submitEnabled = !isUploading && pickedFile != null && title.isNotBlank()
+        val submitInteraction = remember { MutableInteractionSource() }
         Button(
             onClick = {
                 val file = pickedFile
@@ -1188,33 +1615,37 @@ private fun SubjectUploadSection(
                     onUploadSubmit(title, description, file)
                 }
             },
-            enabled = !isUploading && pickedFile != null && title.isNotBlank(),
+            enabled = submitEnabled,
+            interactionSource = submitInteraction,
             shape = RoundedCornerShape(16.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = subject.accentColor),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary
+            ),
             modifier = Modifier
                 .fillMaxWidth()
                 .height(54.dp)
+                .interactiveButtonMotion(submitInteraction, enabled = submitEnabled)
                 .testTag("upload_submit_button")
         ) {
             if (isUploading) {
                 CircularProgressIndicator(
                     modifier = Modifier.size(20.dp),
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onPrimary,
                     strokeWidth = 2.dp
                 )
                 Spacer(modifier = Modifier.width(10.dp))
-                Text("Uploading…", color = Color.White)
+                Text("Uploading…")
             } else {
                 Icon(
                     imageVector = Icons.Rounded.CloudUpload,
                     contentDescription = null,
-                    tint = Color.White
+                    tint = if (submitEnabled) IconUploadOrange else IconUploadOrange.copy(alpha = 0.45f)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = stringResource(R.string.upload_submit_button),
-                    style = MaterialTheme.typography.titleSmall,
-                    color = Color.White
+                    style = MaterialTheme.typography.titleSmall
                 )
             }
         }
@@ -1230,15 +1661,15 @@ private data class FileTypeVisual(
 )
 
 private fun fileTypeVisual(extension: String): FileTypeVisual = when (extension.lowercase(Locale.US)) {
-    "pdf" -> FileTypeVisual("PDF", Icons.Rounded.PictureAsPdf, Color(0xFFDC2626))
+    "pdf" -> FileTypeVisual("PDF", Icons.Rounded.PictureAsPdf, IconDangerRose)
     "jpg", "jpeg", "png", "webp" -> FileTypeVisual(
         extension.uppercase(Locale.US),
         Icons.Rounded.Image,
-        Color(0xFF0F766E)
+        IconProfileTeal
     )
-    "doc", "docx" -> FileTypeVisual("DOC", Icons.Rounded.Description, Color(0xFF2563EB))
-    "ppt", "pptx" -> FileTypeVisual("PPT", Icons.Rounded.Slideshow, Color(0xFFEA580C))
-    "xls", "xlsx" -> FileTypeVisual("XLS", Icons.Rounded.TableChart, Color(0xFF15803D))
-    "txt" -> FileTypeVisual("TXT", Icons.Rounded.Description, Color(0xFF475569))
-    else -> FileTypeVisual("FILE", Icons.Rounded.Description, Color(0xFF64748B))
+    "doc", "docx" -> FileTypeVisual("DOC", Icons.Rounded.Description, IconActionBlue)
+    "ppt", "pptx" -> FileTypeVisual("PPT", Icons.Rounded.Slideshow, IconUploadOrange)
+    "xls", "xlsx" -> FileTypeVisual("XLS", Icons.Rounded.TableChart, IconSuccessEmerald)
+    "txt" -> FileTypeVisual("TXT", Icons.Rounded.Description, IconBrandIndigo)
+    else -> FileTypeVisual("FILE", Icons.Rounded.Description, IconBrandIndigo)
 }
